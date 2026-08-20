@@ -1,0 +1,27 @@
+# Environment & Secrets
+.env
+.env.local
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Output Lists & Logs
+fatura_listeleri/
+eklenecekler.txt
+*.xlsx
+gunluk_log_*.txt
+
+# IDE & OS Files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

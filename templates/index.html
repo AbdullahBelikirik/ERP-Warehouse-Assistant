@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dükkan Asistanı</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#2563eb">
+</head>
+<body class="bg-gray-100 text-gray-800 antialiased relative min-h-screen">
+
+    <!-- NOTIFICATION BARS (SUCCESS / ERROR) -->
+    <div id="successNotification" class="fixed top-0 left-0 right-0 bg-emerald-600 text-white p-4 font-bold text-center z-50 hidden shadow-lg transform transition-all duration-300">
+        <p id="successNotificationText" class="text-base"></p>
+    </div>
+
+    <div id="errorModal" class="fixed inset-0 bg-red-950/80 backdrop-blur-sm z-50 hidden flex-col justify-center items-center p-5">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl border-4 border-red-600 flex flex-col items-center">
+            <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4 text-red-600">
+                <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+            </div>
+            <h3 class="text-xl font-black text-red-600 mb-2">DİKKAT / HATA</h3>
+            <p id="errorModalText" class="text-gray-800 font-bold text-base whitespace-pre-line mb-6"></p>
+            <button id="btnDismissError" class="w-full bg-red-600 active:bg-red-800 text-white font-black py-4 rounded-xl text-lg transition">
+                ANLADIM, TAMAM
+            </button>
+        </div>
+    </div>
+
+    <!-- CUSTOMER SELECTION MODAL -->
+    <div id="customerSelectionModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col justify-center items-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] p-5 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-200">
+                <div>
+                    <h3 class="text-lg font-black text-purple-800">Cari / Müşteri Seçiniz</h3>
+                    <p id="customerSelectionCount" class="text-xs font-semibold text-gray-500"></p>
+                </div>
+                <button id="btnCloseCustomerModal" class="text-gray-400 hover:text-gray-700 text-3xl font-bold px-2">&times;</button>
+            </div>
+            
+            <div id="customerSelectionList" class="overflow-y-auto space-y-2 py-3 flex-1 pr-1"></div>
+
+            <div class="pt-2 border-t border-gray-200 space-y-2">
+                <button id="btnUseRawCustomer" class="w-full bg-amber-500 active:bg-amber-600 text-white font-black py-3 px-4 rounded-xl transition text-sm flex items-center justify-center shadow">
+                    ✍️ <span id="lblRawCustomerName" class="ml-1 truncate">Bu Şekilde Kullan</span>
+                </button>
+                <button id="btnCancelCustomerModal" class="w-full bg-gray-200 active:bg-gray-300 text-gray-700 font-bold py-2.5 rounded-xl transition text-sm">
+                    İptal / Kapat
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MULTIPLE PRICE QUERY SELECTION MODAL -->
+    <div id="priceQuerySelectionModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col justify-center items-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] p-5 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-200">
+                <div>
+                    <h3 class="text-lg font-black text-gray-800">Ürün Seçiniz</h3>
+                    <p id="priceQuerySelectionCount" class="text-xs font-semibold text-gray-500"></p>
+                </div>
+                <button id="btnClosePriceQueryModal" class="text-gray-400 hover:text-gray-700 text-3xl font-bold px-2">&times;</button>
+            </div>
+            
+            <div id="priceQuerySelectionList" class="overflow-y-auto space-y-2 py-3 flex-1 pr-1"></div>
+
+            <button id="btnCancelPriceQueryModal" class="w-full mt-2 bg-gray-200 active:bg-gray-300 text-gray-700 font-bold py-3 rounded-xl transition text-base">
+                İptal / Kapat
+            </button>
+        </div>
+    </div>
+
+    <!-- INVOICE PRODUCT SELECTION MODAL -->
+    <div id="invoiceProductSelectionModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col justify-center items-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] p-5 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-200">
+                <div>
+                    <h3 class="text-lg font-black text-purple-800">Faturaya Hangi Ürün Yazılsın?</h3>
+                    <p id="invoiceProductSelectionCount" class="text-xs font-semibold text-gray-500"></p>
+                </div>
+                <button id="btnCloseInvoiceProductModal" class="text-gray-400 hover:text-gray-700 text-3xl font-bold px-2">&times;</button>
+            </div>
+            
+            <div id="invoiceProductSelectionList" class="overflow-y-auto space-y-2 py-3 flex-1 pr-1"></div>
+
+            <div class="pt-2 border-t border-gray-200 space-y-2">
+                <button id="btnAppendRawInvoiceItem" class="w-full bg-amber-500 active:bg-amber-600 text-white font-black py-3 px-4 rounded-xl transition text-sm flex items-center justify-center shadow">
+                    ✍️ <span id="lblRawInvoiceItem" class="ml-1 truncate">Bu Şekilde Yaz</span>
+                </button>
+                <button id="btnCancelInvoiceProductModal" class="w-full bg-gray-200 active:bg-gray-300 text-gray-700 font-bold py-2.5 rounded-xl transition text-sm">
+                    İptal / Kapat
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BARCODE REGISTRATION PRODUCT SELECTION MODAL -->
+    <div id="barcodeMatchSelectionModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col justify-center items-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] p-5 shadow-2xl flex flex-col">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-200">
+                <div>
+                    <h3 class="text-lg font-black text-emerald-800">Barkod Hangi Ürüne Eşlensin?</h3>
+                    <p id="barcodeMatchSelectionCount" class="text-xs font-semibold text-gray-500"></p>
+                </div>
+                <button id="btnCloseBarcodeMatchModal" class="text-gray-400 hover:text-gray-700 text-3xl font-bold px-2">&times;</button>
+            </div>
+            
+            <div id="barcodeMatchSelectionList" class="overflow-y-auto space-y-2 py-3 flex-1 pr-1"></div>
+
+            <div class="pt-2 border-t border-gray-200 space-y-2">
+                <button id="btnSaveRawBarcodeNote" class="w-full bg-amber-500 active:bg-amber-600 text-white font-black py-3 px-4 rounded-xl transition text-sm flex items-center justify-center shadow">
+                    ✍️ <span id="lblRawBarcodeNote" class="ml-1 truncate">Olduğu Gibi Kaydet</span>
+                </button>
+                <button id="btnCancelBarcodeMatchModal" class="w-full bg-gray-200 active:bg-gray-300 text-gray-700 font-bold py-2.5 rounded-xl transition text-sm">
+                    İptal / Kapat
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN APPLICATION CONTAINER -->
+    <main class="p-4 space-y-6 pb-20">
+
+        <!-- SECTION 1: PRICE QUERY -->
+        <section class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+            <h2 class="text-lg font-bold mb-4 text-blue-700 flex items-center">
+                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                Fiyat Sorgula
+            </h2>
+            
+            <div class="flex flex-col space-y-4">
+                <div class="flex space-x-2">
+                    <input type="text" id="inputPriceQuery" placeholder="Barkod, Stok Adı veya Kodu..." 
+                           class="flex-1 p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg">
+                    
+                    <button id="btnScanPriceCamera" class="w-16 flex items-center justify-center bg-gray-100 border border-gray-300 rounded-xl active:bg-gray-200 text-gray-600 transition">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
+                
+                <div class="flex space-x-2">
+                    <button id="btnSubmitPriceQuery" 
+                            class="flex-1 bg-blue-600 active:bg-blue-800 text-white font-bold py-4 rounded-xl transition shadow-sm text-lg">
+                        Sorgula
+                    </button>
+                    <button id="btnQuickTransferToInvoice" title="Faturaya Aktar"
+                            class="bg-purple-600 active:bg-purple-800 text-white font-bold px-5 py-4 rounded-xl transition shadow-sm flex items-center justify-center">
+                        <svg class="w-6 h-6 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                        <span class="text-sm">Faturaya Aktar</span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="priceQueryResultContainer" class="mt-5 hidden"></div>
+        </section>
+        
+        <!-- SECTION 2: INVOICE BUILDER -->
+        <section id="invoiceSection" class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+            <h2 class="text-lg font-bold text-purple-700 flex items-center mb-4">
+                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                Fatura Listesine Ürün Ekle
+            </h2>
+            
+            <div class="flex flex-col space-y-3">
+                <div class="flex space-x-2">
+                    <input type="text" id="inputCustomerName" placeholder="Müşteri / Cari Adı..." 
+                        class="flex-1 p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg font-semibold">
+                    <button id="btnSearchCustomer" title="Cari Ara"
+                        class="w-16 flex items-center justify-center bg-purple-100 border border-purple-300 rounded-xl active:bg-purple-200 text-purple-700 font-bold transition">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </button>
+                </div>
+
+                <div class="flex space-x-2">
+                    <input type="text" id="inputInvoiceItem" placeholder="Barkod, Stok Kodu veya Ürün Adı..." 
+                        class="flex-1 p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg">
+                    
+                    <button id="btnScanInvoiceCamera" class="w-16 flex items-center justify-center bg-gray-100 border border-gray-300 rounded-xl active:bg-gray-200 text-gray-600 transition">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
+
+                <input type="number" id="inputInvoiceQuantity" value="1" min="1" placeholder="Miktar" 
+                    class="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg">
+
+                <button id="btnSubmitAddToInvoice" 
+                        class="w-full bg-purple-600 active:bg-purple-800 text-white font-bold py-4 rounded-xl transition shadow-sm text-lg">
+                    Listeye / Excele Ekle
+                </button>
+            </div>
+
+            <!-- LIVE CART ITEMS SUMMARY -->
+            <div id="invoiceCartContainer" class="mt-6 pt-4 border-t border-gray-200 hidden">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-gray-700 text-sm flex items-center">
+                        <span class="w-2.5 h-2.5 bg-green-500 rounded-full mr-2"></span>
+                        Faturadaki Ürünler
+                    </h3>
+                    <span id="lblCartSummaryBadge" class="bg-purple-100 text-purple-800 font-extrabold text-xs px-2.5 py-1 rounded-full border border-purple-200">
+                        0 Kalem (0 Adet)
+                    </span>
+                </div>
+
+                <div id="invoiceCartList" class="space-y-2 max-h-60 overflow-y-auto pr-1"></div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: PENDING BARCODE REGISTRATION -->
+        <section class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200">
+            <h2 class="text-lg font-bold mb-4 text-emerald-600 flex items-center">
+                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                Sisteme Barkod Ekle
+            </h2>
+            
+            <div class="flex flex-col space-y-4">
+                <div class="flex space-x-2">
+                    <input type="text" id="inputNewBarcode" placeholder="Yeni Barkod (13 Hane)..." 
+                           class="flex-1 p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg">
+                    
+                    <button id="btnScanNewBarcodeCamera" class="w-16 flex items-center justify-center bg-gray-100 border border-gray-300 rounded-xl active:bg-gray-200 text-gray-600 transition">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
+                
+                <input type="text" id="inputNewBarcodeNote" placeholder="Ürün Adı veya Stok Kodu (Arama yapar)..." 
+                       class="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-lg">
+                
+                <button id="btnSubmitNewBarcode" 
+                        class="w-full bg-emerald-500 active:bg-emerald-700 text-white font-bold py-4 rounded-xl transition shadow-sm text-lg">
+                    Listeye Kaydet
+                </button>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- LIVE CAMERA SCANNER MODAL -->
+    <div id="cameraModal" class="fixed inset-0 bg-black bg-opacity-95 z-50 hidden flex-col justify-center items-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-4 relative flex flex-col items-center shadow-2xl">
+            <div class="w-full flex justify-between items-center mb-2">
+                <button id="btnToggleTorch" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold px-3 py-1.5 rounded-lg text-xs flex items-center border">
+                    🔦 Fener: Kapalı
+                </button>
+                <button id="btnCloseCameraModal" class="text-red-500 font-bold text-3xl px-2 leading-none">&times;</button>
+            </div>
+            
+            <h3 class="font-bold text-base mb-2 text-gray-700">13 Haneli Barkodu Hizalayın</h3>
+            <div id="cameraReaderView" class="w-full rounded-xl overflow-hidden bg-black border-2 border-blue-500"></div>
+            
+            <p id="cameraStatusText" class="text-xs font-bold text-blue-600 mt-3 text-center transition-all">Barkod taranıyor...</p>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT APPLICATION LOGIC -->
+    <script>
+        let qrScannerInstance = null;
+        let activeInputElement = null;
+        let activeScanOperation = null;
+        let quickTransferCodeValue = "";
+        let isTorchActive = false;
+
+        // Camera Elements
+        const cameraModal = document.getElementById('cameraModal');
+        const btnToggleTorch = document.getElementById('btnToggleTorch');
+        const cameraStatusText = document.getElementById('cameraStatusText');
+
+        // Customer Elements
+        const inputCustomerName = document.getElementById('inputCustomerName');
+        const btnSearchCustomer = document.getElementById('btnSearchCustomer');
+        const customerSelectionModal = document.getElementById('customerSelectionModal');
+        const customerSelectionList = document.getElementById('customerSelectionList');
+        const customerSelectionCount = document.getElementById('customerSelectionCount');
+        const lblRawCustomerName = document.getElementById('lblRawCustomerName');
+        let tempCustomerSearchText = "";
+
+        // Invoice Elements
+        const inputInvoiceItem = document.getElementById('inputInvoiceItem');
+        const inputInvoiceQuantity = document.getElementById('inputInvoiceQuantity');
+        const btnSubmitAddToInvoice = document.getElementById('btnSubmitAddToInvoice');
+        const invoiceCartContainer = document.getElementById('invoiceCartContainer');
+        const invoiceCartList = document.getElementById('invoiceCartList');
+        const lblCartSummaryBadge = document.getElementById('lblCartSummaryBadge');
+        const invoiceProductSelectionModal = document.getElementById('invoiceProductSelectionModal');
+        const invoiceProductSelectionList = document.getElementById('invoiceProductSelectionList');
+        const invoiceProductSelectionCount = document.getElementById('invoiceProductSelectionCount');
+        const lblRawInvoiceItem = document.getElementById('lblRawInvoiceItem');
+        let tempInvoiceState = { customerName: "", itemInput: "", quantity: 1 };
+
+        // Price Query Elements
+        const inputPriceQuery = document.getElementById('inputPriceQuery');
+        const btnSubmitPriceQuery = document.getElementById('btnSubmitPriceQuery');
+        const btnQuickTransferToInvoice = document.getElementById('btnQuickTransferToInvoice');
+        const priceQueryResultContainer = document.getElementById('priceQueryResultContainer');
+        const priceQuerySelectionModal = document.getElementById('priceQuerySelectionModal');
+        const priceQuerySelectionList = document.getElementById('priceQuerySelectionList');
+        const priceQuerySelectionCount = document.getElementById('priceQuerySelectionCount');
+
+        // New Barcode Registration Elements
+        const inputNewBarcode = document.getElementById('inputNewBarcode');
+        const inputNewBarcodeNote = document.getElementById('inputNewBarcodeNote');
+        const btnSubmitNewBarcode = document.getElementById('btnSubmitNewBarcode');
+        const barcodeMatchSelectionModal = document.getElementById('barcodeMatchSelectionModal');
+        const barcodeMatchSelectionList = document.getElementById('barcodeMatchSelectionList');
+        const barcodeMatchSelectionCount = document.getElementById('barcodeMatchSelectionCount');
+        const lblRawBarcodeNote = document.getElementById('lblRawBarcodeNote');
+        let tempBarcodeRegistrationState = { barcode: "", note: "" };
+
+        // NOTIFICATION & HAPTIC HELPERS
+        function triggerHapticAndAudioBeep() {
+            try {
+                if (navigator.vibrate) navigator.vibrate(100);
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } catch(e) {}
+        }
+
+        function showSuccessNotification(message) {
+            const el = document.getElementById('successNotification');
+            document.getElementById('successNotificationText').innerText = message;
+            el.classList.remove('hidden');
+            setTimeout(() => { el.classList.add('hidden'); }, 3500);
+        }
+
+        function showErrorDialog(message) {
+            document.getElementById('errorModalText').innerText = message;
+            const modal = document.getElementById('errorModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        document.getElementById('btnDismissError').addEventListener('click', () => {
+            const modal = document.getElementById('errorModal');
+            modal.classList.remove('flex');
+            modal.classList.add('hidden');
+        });
+
+        function closeAllModals() {
+            priceQuerySelectionModal.classList.add('hidden');
+            priceQuerySelectionModal.classList.remove('flex');
+            invoiceProductSelectionModal.classList.add('hidden');
+            invoiceProductSelectionModal.classList.remove('flex');
+            barcodeMatchSelectionModal.classList.add('hidden');
+            barcodeMatchSelectionModal.classList.remove('flex');
+            customerSelectionModal.classList.add('hidden');
+            customerSelectionModal.classList.remove('flex');
+        }
+
+        document.getElementById('btnClosePriceQueryModal').addEventListener('click', closeAllModals);
+        document.getElementById('btnCancelPriceQueryModal').addEventListener('click', closeAllModals);
+        document.getElementById('btnCloseInvoiceProductModal').addEventListener('click', closeAllModals);
+        document.getElementById('btnCancelInvoiceProductModal').addEventListener('click', closeAllModals);
+        document.getElementById('btnCloseBarcodeMatchModal').addEventListener('click', closeAllModals);
+        document.getElementById('btnCancelBarcodeMatchModal').addEventListener('click', closeAllModals);
+        document.getElementById('btnCloseCustomerModal').addEventListener('click', closeAllModals);
+        document.getElementById('btnCancelCustomerModal').addEventListener('click', closeAllModals);
+
+        // TORCH CONTROL
+        btnToggleTorch.addEventListener('click', async () => {
+            if (!qrScannerInstance) return;
+            try {
+                isTorchActive = !isTorchActive;
+                await qrScannerInstance.applyVideoConstraints({
+                    advanced: [{ torch: isTorchActive }]
+                });
+                btnToggleTorch.innerText = isTorchActive ? "🔦 Fener: Açık" : "🔦 Fener: Kapalı";
+                btnToggleTorch.classList.toggle('bg-amber-300', isTorchActive);
+            } catch (err) {
+                console.log("Torch not supported:", err);
+            }
+        });
+
+        // CAMERA SCANNER ENGINE (13-DIGIT VALIDATED)
+        async function startCameraScanner(targetInputId, operationType) {
+            activeInputElement = document.getElementById(targetInputId);
+            activeScanOperation = operationType;
+            isTorchActive = false;
+            btnToggleTorch.innerText = "🔦 Fener: Kapalı";
+            btnToggleTorch.classList.remove('bg-amber-300');
+
+            cameraModal.classList.remove('hidden');
+            cameraModal.classList.add('flex');
+            cameraStatusText.innerText = "Kamera başlatılıyor...";
+            cameraStatusText.className = "text-xs font-bold text-blue-600 mt-3 text-center";
+
+            if (qrScannerInstance) {
+                try { await qrScannerInstance.stop(); } catch(e) {}
+            }
+
+            qrScannerInstance = new Html5Qrcode("cameraReaderView");
+            const config = { fps: 20, qrbox: { width: 260, height: 160 }, aspectRatio: 1.0 };
+
+            qrScannerInstance.start(
+                { facingMode: "environment" },
+                config,
+                (decodedText) => {
+                    const code = decodedText.trim();
+                    if (code.length !== 13 || !/^\d+$/.test(code)) {
+                        cameraStatusText.innerText = `Eksik Okundu (${code.length} hane: ${code}). Lütfen netleştirin...`;
+                        cameraStatusText.className = "text-xs font-bold text-amber-600 mt-3 text-center animate-pulse";
+                        return;
+                    }
+
+                    triggerHapticAndAudioBeep();
+                    stopCameraScanner();
+                    activeInputElement.value = code;
+
+                    if (activeScanOperation === 'price_query') {
+                        btnSubmitPriceQuery.click();
+                    } else if (activeScanOperation === 'invoice') {
+                        inputInvoiceQuantity.focus();
+                    } else {
+                        inputNewBarcodeNote.focus();
+                    }
+                },
+                () => {}
+            ).then(() => {
+                cameraStatusText.innerText = "13 haneli barkodu kutunun içine hizalayın.";
+                cameraStatusText.className = "text-xs font-bold text-gray-600 mt-3 text-center";
+            }).catch(err => {
+                showErrorDialog("Kamera başlatılamadı: " + err);
+                stopCameraScanner();
+            });
+        }
+
+        async function stopCameraScanner() {
+            if (qrScannerInstance) {
+                try { 
+                    await qrScannerInstance.stop(); 
+                    qrScannerInstance.clear();
+                } catch(e) {}
+                qrScannerInstance = null;
+            }
+            cameraModal.classList.remove('flex');
+            cameraModal.classList.add('hidden');
+        }
+
+        document.getElementById('btnCloseCameraModal').addEventListener('click', stopCameraScanner);
+        document.getElementById('btnScanPriceCamera').addEventListener('click', () => startCameraScanner('inputPriceQuery', 'price_query'));
+        document.getElementById('btnScanInvoiceCamera').addEventListener('click', () => startCameraScanner('inputInvoiceItem', 'invoice'));
+        document.getElementById('btnScanNewBarcodeCamera').addEventListener('click', () => startCameraScanner('inputNewBarcode', 'barcode_add'));
+
+        // QUICK TRANSFER BUTTON
+        btnQuickTransferToInvoice.addEventListener('click', () => {
+            const transferValue = quickTransferCodeValue || inputPriceQuery.value.trim();
+            if (!transferValue) {
+                showErrorDialog("Önce fiyat sorgulama alanında bir barkod veya ürün seçilmiş olmalı!");
+                return;
+            }
+
+            inputInvoiceItem.value = transferValue;
+            document.getElementById('invoiceSection').scrollIntoView({ behavior: 'smooth' });
+            setTimeout(() => {
+                inputInvoiceQuantity.focus();
+                inputInvoiceQuantity.select();
+            }, 500);
+        });
+
+        // RENDER PRICE RESULT CARD
+        function renderPriceResultCard(data) {
+            const container = document.getElementById('priceQueryResultContainer');
+            const title = data.product_name || "Tanımsız Ürün";
+            quickTransferCodeValue = data.stock_code || data.barcode || inputPriceQuery.value.trim();
+
+            let metaInfo = [];
+            if (data.stock_code) metaInfo.push(`Stok Kodu: <span class="font-bold">${data.stock_code}</span>`);
+            if (data.barcode) metaInfo.push(`Barkod: <span class="font-bold">${data.barcode}</span>`);
+            let metaHtml = metaInfo.length > 0 ? `<p class="text-xs text-blue-700 mt-1">${metaInfo.join(' | ')}</p>` : '';
+
+            let cardHtml = `<div class="border-t pt-3">
+                <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 mb-2">
+                    <p class="text-base font-bold text-blue-900">${title}</p>
+                    ${metaHtml}
+                </div>
+                <ul class="space-y-2 text-sm">`;
+
+            if (!data.data || data.data.length === 0) {
+                cardHtml += `<li class="text-red-500 font-bold p-2 text-center bg-red-50 rounded-lg">Bu ürüne ait satış kaydı bulunamadı.</li>`;
+            } else {
+                data.data.forEach(entry => {
+                    const priceFormatted = Number(entry.price).toFixed(2);
+                    cardHtml += `
+                    <li class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border">
+                        <span class="text-gray-500 font-medium">${entry.date}</span>
+                        <span class="font-bold text-green-600 text-lg">${priceFormatted} TL</span>
+                    </li>`;
+                });
+            }
+
+            cardHtml += `</ul>
+                <button onclick="document.getElementById('btnQuickTransferToInvoice').click()" class="w-full mt-3 bg-purple-100 active:bg-purple-200 text-purple-700 font-bold py-3 rounded-xl text-sm transition border border-purple-200 flex items-center justify-center">
+                    Bu Ürünü Faturaya Aktar ➔
+                </button>
+            </div>`;
+
+            container.innerHTML = cardHtml;
+            container.classList.remove('hidden');
+        }
+
+        // PRICE QUERY EXECUTION
+        async function fetchPriceDetail(blkodu) {
+            btnSubmitPriceQuery.innerText = "Yükleniyor...";
+            try {
+                const response = await fetch(`/api/price/detail/${blkodu}`);
+                const data = await response.json();
+                if (data.status === "single_match") {
+                    renderPriceResultCard(data);
+                } else {
+                    showErrorDialog(data.message || "Fiyat çekilemedi.");
+                }
+            } catch(e) {
+                showErrorDialog("Detay Hatası: " + e.message);
+            } finally {
+                btnSubmitPriceQuery.innerText = "Sorgula";
+            }
+        }
+
+        inputPriceQuery.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') btnSubmitPriceQuery.click();
+        });
+
+        btnSubmitPriceQuery.addEventListener('click', async () => {
+            const query = inputPriceQuery.value.trim();
+            if (!query) return;
+
+            btnSubmitPriceQuery.innerText = "Aranıyor...";
+            priceQueryResultContainer.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/price/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ search_query: query })
+                });
+                const data = await response.json();
+
+                if (data.status === "single_match") {
+                    renderPriceResultCard(data);
+                } else if (data.status === "multiple_match") {
+                    priceQuerySelectionList.innerHTML = "";
+                    priceQuerySelectionCount.innerText = `${data.products.length} adet aktif ürün bulundu.`;
+
+                    data.products.forEach(product => {
+                        const item = document.createElement('div');
+                        item.className = "p-3 bg-gray-50 hover:bg-blue-50 active:bg-blue-100 border border-gray-200 rounded-xl cursor-pointer transition flex flex-col space-y-1";
+                        item.innerHTML = `
+                            <div class="flex justify-between items-start">
+                                <span class="font-bold text-gray-900 text-sm">${product.stock_name}</span>
+                                ${product.stock_code ? `<span class="bg-gray-200 text-gray-700 text-xs font-semibold px-2 py-0.5 rounded ml-2 whitespace-nowrap">${product.stock_code}</span>` : ''}
+                            </div>
+                            ${product.barcode ? `<span class="text-xs text-gray-500">Barkod: ${product.barcode}</span>` : ''}
+                        `;
+                        item.addEventListener('click', async () => {
+                            closeAllModals();
+                            await fetchPriceDetail(product.blkodu);
+                        });
+                        priceQuerySelectionList.appendChild(item);
+                    });
+
+                    priceQuerySelectionModal.classList.remove('hidden');
+                    priceQuerySelectionModal.classList.add('flex');
+                } else if (data.status === "not_found") {
+                    showErrorDialog(data.message);
+                } else {
+                    showErrorDialog("Sorgu Hatası: " + (data.message || "Bilinmeyen hata"));
+                }
+            } catch (error) {
+                showErrorDialog("İşlem Hatası: " + error.message);
+            } finally {
+                btnSubmitPriceQuery.innerText = "Sorgula";
+            }
+        });
+
+        // =======================================================
+        // CUSTOMER SEARCH LOGIC
+        // =======================================================
+        async function executeCustomerSearch() {
+            const customerQuery = inputCustomerName.value.trim();
+            if (!customerQuery) {
+                showErrorDialog("Lütfen aramak istediğiniz cari/müşteri adını yazın!");
+                return;
+            }
+
+            tempCustomerSearchText = customerQuery;
+            lblRawCustomerName.innerText = `Olduğu gibi kullan: "${customerQuery}"`;
+            btnSearchCustomer.innerText = "...";
+
+            try {
+                const response = await fetch('/api/customers/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ search_query: customerQuery })
+                });
+                const data = await response.json();
+                const customers = data.customers || [];
+
+                customerSelectionList.innerHTML = "";
+                customerSelectionCount.innerText = customers.length > 0 ? 
+                    `${customers.length} adet cari bulundu:` : 
+                    `Eşleşen cari bulunamadı. Alttaki butonla direkt kullanabilirsiniz.`;
+
+                customers.forEach(customer => {
+                    const row = document.createElement('div');
+                    row.className = "p-3 bg-purple-50 hover:bg-purple-100 active:bg-purple-200 border border-purple-200 rounded-xl cursor-pointer transition flex justify-between items-center";
+                    row.innerHTML = `
+                        <div class="flex flex-col pr-2">
+                            <span class="font-bold text-gray-900 text-sm">${customer.display_name || customer.title}</span>
+                        </div>
+                        ${customer.customer_code ? `<span class="bg-purple-200 text-purple-900 text-xs font-bold px-2 py-0.5 rounded whitespace-nowrap">${customer.customer_code}</span>` : ''}
+                    `;
+                    row.addEventListener('click', () => {
+                        closeAllModals();
+                        inputCustomerName.value = customer.title;
+                        inputInvoiceItem.focus();
+                        loadInvoiceCartItems();
+                    });
+                    customerSelectionList.appendChild(row);
+                });
+
+                customerSelectionModal.classList.remove('hidden');
+                customerSelectionModal.classList.add('flex');
+            } catch (err) {
+                showErrorDialog("Cari Arama Hatası: " + err.message);
+            } finally {
+                btnSearchCustomer.innerHTML = `<svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>`;
+            }
+        }
+
+        btnSearchCustomer.addEventListener('click', executeCustomerSearch);
+        inputCustomerName.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                executeCustomerSearch();
+            }
+        });
+        inputCustomerName.addEventListener('blur', () => {
+            if (inputCustomerName.value.trim()) loadInvoiceCartItems();
+        });
+
+        document.getElementById('btnUseRawCustomer').addEventListener('click', () => {
+            closeAllModals();
+            inputCustomerName.value = tempCustomerSearchText;
+            inputInvoiceItem.focus();
+            loadInvoiceCartItems();
+        });
+
+        // =======================================================
+        // LIVE INVOICE CART MANAGEMENT
+        // =======================================================
+        async function loadInvoiceCartItems() {
+            const customerName = inputCustomerName.value.trim();
+            if (!customerName) {
+                invoiceCartContainer.classList.add('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/invoices/items', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customer_name: customerName })
+                });
+                const data = await response.json();
+
+                if (data.status === 'success' && data.items && data.items.length > 0) {
+                    lblCartSummaryBadge.innerText = `${data.total_items} Kalem (${data.total_quantity} Adet)`;
+                    invoiceCartList.innerHTML = "";
+
+                    data.items.forEach(item => {
+                        const row = document.createElement('div');
+                        row.className = "flex justify-between items-center bg-gray-50 p-2.5 rounded-xl border border-gray-200 text-sm";
+                        row.innerHTML = `
+                            <div class="flex-1 pr-2">
+                                <p class="font-bold text-gray-900 leading-tight">${item.name}</p>
+                                <p class="text-xs text-gray-500">${item.code}</p>
+                            </div>
+                            <div class="flex items-center space-x-1.5">
+                                <button onclick="updateCartItemQuantity('${item.code}', ${item.quantity - 1})" class="w-8 h-8 flex items-center justify-center bg-gray-200 active:bg-gray-300 font-black rounded-lg text-base text-gray-700">-</button>
+                                <span class="font-black text-purple-700 min-w-[2rem] text-center">${item.quantity}</span>
+                                <button onclick="updateCartItemQuantity('${item.code}', ${item.quantity + 1})" class="w-8 h-8 flex items-center justify-center bg-gray-200 active:bg-gray-300 font-black rounded-lg text-base text-gray-700">+</button>
+                                <button onclick="deleteCartItem('${item.code}')" class="w-8 h-8 flex items-center justify-center bg-red-100 active:bg-red-200 text-red-600 rounded-lg text-sm ml-1 font-bold">🗑️</button>
+                            </div>
+                        `;
+                        invoiceCartList.appendChild(row);
+                    });
+
+                    invoiceCartContainer.classList.remove('hidden');
+                } else {
+                    invoiceCartContainer.classList.add('hidden');
+                }
+            } catch (e) {
+                console.log("Cart load error:", e);
+            }
+        }
+
+        async function updateCartItemQuantity(code, newQuantity) {
+            const customerName = inputCustomerName.value.trim();
+            if (!customerName) return;
+
+            try {
+                const response = await fetch('/api/invoices/items/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_name: customerName,
+                        code: code,
+                        new_quantity: newQuantity,
+                        action: newQuantity <= 0 ? 'delete' : 'update'
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    triggerHapticAndAudioBeep();
+                    await loadInvoiceCartItems();
+                } else {
+                    showErrorDialog(data.message);
+                }
+            } catch (err) {
+                showErrorDialog("Güncelleme Hatası: " + err.message);
+            }
+        }
+
+        async function deleteCartItem(code) {
+            const customerName = inputCustomerName.value.trim();
+            if (!customerName) return;
+
+            try {
+                const response = await fetch('/api/invoices/items/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_name: customerName,
+                        code: code,
+                        new_quantity: 0,
+                        action: 'delete'
+                    })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showSuccessNotification("Ürün faturadan silindi.");
+                    await loadInvoiceCartItems();
+                } else {
+                    showErrorDialog(data.message);
+                }
+            } catch (err) {
+                showErrorDialog("Silme Hatası: " + err.message);
+            }
+        }
+
+        // =======================================================
+        // INVOICE ITEM ADDITION PIPELINE
+        // =======================================================
+        async function commitItemToInvoice(customerName, itemCodeOrText, quantity) {
+            try {
+                const response = await fetch('/api/invoices/items/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        customer_name: customerName, 
+                        item_input: itemCodeOrText, 
+                        quantity: quantity
+                    })
+                });
+
+                const data = await response.json();
+                if (data.status === "success") {
+                    showSuccessNotification(`[${data.product_name}]\nFaturaya Başarıyla Eklendi!`);
+                    inputInvoiceItem.value = "";
+                    inputInvoiceQuantity.value = "1";
+                    inputInvoiceItem.focus();
+                    await loadInvoiceCartItems();
+                } else {
+                    showErrorDialog(data.message);
+                }
+            } catch (err) {
+                showErrorDialog("Bağlantı hatası: " + err.message);
+            }
+        }
+
+        document.getElementById('btnAppendRawInvoiceItem').addEventListener('click', async () => {
+            closeAllModals();
+            await commitItemToInvoice(
+                tempInvoiceState.customerName, 
+                tempInvoiceState.itemInput, 
+                tempInvoiceState.quantity
+            );
+        });
+
+        btnSubmitAddToInvoice.addEventListener('click', async () => {
+            const customerName = inputCustomerName.value.trim();
+            const itemInput = inputInvoiceItem.value.trim();
+            const quantity = inputInvoiceQuantity.value || 1;
+
+            if (!customerName || !itemInput) {
+                showErrorDialog("Lütfen hem Müşteri Adını hem de Ürün/Barkod alanını doldurun!");
+                return;
+            }
+
+            // Direct commit if 13-digit EAN barcode
+            if (itemInput.length === 13 && /^\d+$/.test(itemInput)) {
+                await commitItemToInvoice(customerName, itemInput, quantity);
+                return;
+            }
+
+            // Search product in database
+            tempInvoiceState = { customerName: customerName, itemInput: itemInput, quantity: quantity };
+            lblRawInvoiceItem.innerText = `Olduğu gibi yaz: "${itemInput}"`;
+
+            try {
+                const response = await fetch('/api/products/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ search_query: itemInput })
+                });
+                const data = await response.json();
+                const products = data.products || [];
+
+                invoiceProductSelectionList.innerHTML = "";
+                invoiceProductSelectionCount.innerText = products.length > 0 ? 
+                    `${products.length} eşleşen ürün bulundu (veya alttan direkt yazdır):` : 
+                    `Eşleşen ürün bulunamadı. Alttaki butonla direkt yazabilirsiniz.`;
+
+                products.forEach(product => {
+                    const row = document.createElement('div');
+                    row.className = "p-3 bg-purple-50 hover:bg-purple-100 active:bg-purple-200 border border-purple-200 rounded-xl cursor-pointer transition flex flex-col space-y-1";
+                    row.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <span class="font-bold text-gray-900 text-sm">${product.stock_name}</span>
+                            ${product.stock_code ? `<span class="bg-purple-200 text-purple-900 text-xs font-bold px-2 py-0.5 rounded ml-2 whitespace-nowrap">${product.stock_code}</span>` : ''}
+                        </div>
+                        ${product.barcode ? `<span class="text-xs text-gray-500">Barkod: ${product.barcode}</span>` : ''}
+                    `;
+                    row.addEventListener('click', async () => {
+                        closeAllModals();
+                        const chosenCode = product.stock_code ? product.stock_code : product.stock_name;
+                        await commitItemToInvoice(customerName, chosenCode, quantity);
+                    });
+                    invoiceProductSelectionList.appendChild(row);
+                });
+
+                invoiceProductSelectionModal.classList.remove('hidden');
+                invoiceProductSelectionModal.classList.add('flex');
+            } catch (err) {
+                showErrorDialog("Arama Hatası: " + err.message);
+            }
+        });
+
+        // =======================================================
+        // BARCODE REGISTRATION PIPELINE
+        // =======================================================
+        async function commitPendingBarcode(barcode, note) {
+            try {
+                const response = await fetch('/api/barcodes/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ barcode: barcode, note: note })
+                });
+                const data = await response.json();
+
+                if (data.status === "success") {
+                    showSuccessNotification(`[${note}]\nBarkod Başarıyla Listeye Eklendi!`);
+                    inputNewBarcode.value = ""; 
+                    inputNewBarcodeNote.value = "";
+                } else {
+                    showErrorDialog("Kayıt Hatası: " + data.message);
+                }
+            } catch (error) {
+                showErrorDialog("İşlem Hatası: " + error.message);
+            } finally {
+                btnSubmitNewBarcode.innerText = "Listeye Kaydet";
+            }
+        }
+
+        document.getElementById('btnSaveRawBarcodeNote').addEventListener('click', async () => {
+            closeAllModals();
+            await commitPendingBarcode(tempBarcodeRegistrationState.barcode, tempBarcodeRegistrationState.note);
+        });
+
+        btnSubmitNewBarcode.addEventListener('click', async () => {
+            const barcode = inputNewBarcode.value.trim();
+            const note = inputNewBarcodeNote.value.trim();
+
+            if (!barcode || !note) {
+                showErrorDialog("Lütfen hem barkodu hem de ürün notunu doldurun!");
+                return;
+            }
+
+            if (barcode.length !== 13 || !/^\d+$/.test(barcode)) {
+                showErrorDialog(`Eksik veya hatalı barkod girdiniz!\nBarkod tam 13 haneli sayı olmalıdır.\n(Girilen: ${barcode.length} hane)`);
+                return;
+            }
+
+            btnSubmitNewBarcode.innerText = "Aranıyor...";
+            tempBarcodeRegistrationState = { barcode: barcode, note: note };
+            lblRawBarcodeNote.innerText = `Olduğu gibi kaydet: "${note}"`;
+
+            try {
+                const response = await fetch('/api/products/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ search_query: note })
+                });
+                const data = await response.json();
+                const products = data.products || [];
+
+                barcodeMatchSelectionList.innerHTML = "";
+                barcodeMatchSelectionCount.innerText = products.length > 0 ? 
+                    `${products.length} eşleşen ürün bulundu (veya alttan serbest kaydet):` : 
+                    `Eşleşen ürün bulunamadı. Alttaki butonla direkt kaydedebilirsiniz.`;
+
+                products.forEach(product => {
+                    const row = document.createElement('div');
+                    row.className = "p-3 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200 rounded-xl cursor-pointer transition flex flex-col space-y-1";
+                    row.innerHTML = `
+                        <div class="flex justify-between items-start">
+                            <span class="font-bold text-gray-900 text-sm">${product.stock_name}</span>
+                            ${product.stock_code ? `<span class="bg-emerald-200 text-emerald-900 text-xs font-bold px-2 py-0.5 rounded ml-2 whitespace-nowrap">${product.stock_code}</span>` : ''}
+                        </div>
+                        ${product.barcode ? `<span class="text-xs text-gray-500">Mevcut Barkod: ${product.barcode}</span>` : ''}
+                    `;
+                    row.addEventListener('click', async () => {
+                        if (product.barcode && product.barcode === barcode) {
+                            closeAllModals();
+                            showErrorDialog(`DİKKAT: '${barcode}' barkodu zaten seçtiğiniz [${product.stock_name}] ürününe tanımlı!`);
+                            btnSubmitNewBarcode.innerText = "Listeye Kaydet";
+                            return;
+                        }
+                        closeAllModals();
+                        const fullNote = product.stock_code ? `[${product.stock_code}] ${product.stock_name}` : product.stock_name;
+                        await commitPendingBarcode(barcode, fullNote);
+                    });
+                    barcodeMatchSelectionList.appendChild(row);
+                });
+
+                barcodeMatchSelectionModal.classList.remove('hidden');
+                barcodeMatchSelectionModal.classList.add('flex');
+            } catch (err) {
+                showErrorDialog("Arama Hatası: " + err.message);
+                btnSubmitNewBarcode.innerText = "Listeye Kaydet";
+            }
+        });
+    </script>
+</body>
+</html>
