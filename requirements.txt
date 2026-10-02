@@ -1,2 +1,4 @@
 Flask>=3.0.0
 fdb>=2.0.2
+python-dotenv>=1.0.0
+pyperclip>=1.8.2
