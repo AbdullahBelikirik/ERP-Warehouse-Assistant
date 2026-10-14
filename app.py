@@ -11,6 +11,8 @@ import xml.sax.saxutils as saxutils
 import pyperclip
 import ctypes
 import time
+import re
+import threading
 
 app = Flask(__name__)
 
@@ -23,6 +25,10 @@ def require_env(name):
         raise SystemExit(f"Missing required setting {name}. Copy .env.example to .env and fill it in.")
     return value
 
+
+# --- INVOICE SAFETY LIMITS ---
+MAX_ITEM_QUANTITY = 100000   # Highest quantity for one line (rejects a barcode typed into the quantity box)
+UNPRICED_THRESHOLD = 0.011   # Prices at or below this count as "not set" (never sent to Akinsoft)
 
 # --- SECURITY & PIN CONFIGURATION (never hard-code these) ---
 STAFF_PIN = require_env("APP_PIN")
@@ -89,6 +95,24 @@ def auth_required(f):
             return jsonify({"status": "unauthorized", "message": "Geçersiz veya eksik yetki tokenı! Lütfen PIN giriniz."}), 401
         return f(*args, **kwargs)
     return decorated_function
+
+# Flows that drive Akinsoft with the mouse/keyboard (invoice, report, collection/payment) must
+# never run at the same time: the clicks would mix. Returns 409 while one is running.
+AUTOMATION_LOCK = threading.Lock()
+
+def automation_lock_required(f):
+    @wraps(f)
+    def locked_function(*args, **kwargs):
+        if not AUTOMATION_LOCK.acquire(blocking=False):
+            return jsonify({
+                "status": "error",
+                "message": "Akınsoft şu an başka bir işlemle meşgul (fatura, rapor veya tahsilat/tediye çalışıyor). İşlem bitince tekrar dene."
+            }), 409
+        try:
+            return f(*args, **kwargs)
+        finally:
+            AUTOMATION_LOCK.release()
+    return locked_function
 
 # --- 3-COLUMN EXCEL ENGINE (STOKKODU | MIKTARI | FIYATI) ---
 def read_invoice_excel(xlsx_path):
@@ -776,6 +800,11 @@ def add_invoice_item():
         try: quantity = int(quantity)
         except (ValueError, TypeError): quantity = 1
 
+        # A barcode typed into the quantity box (e.g. a 13-digit number) must never reach the list
+        if quantity > MAX_ITEM_QUANTITY:
+            append_log(f"[HATA] Aşırı miktar reddedildi: {quantity}")
+            return jsonify({'status': 'error', 'message': f'Miktar çok yüksek ({quantity}). Barkod miktar kutusuna girmiş olabilir; en çok {MAX_ITEM_QUANTITY} adet girilebilir.'}), 400
+
         if not customer_name or not input_value:
             append_log("[HATA] Faturaya Ekleme Boş Alan")
             return jsonify({'status': 'error', 'message': 'Müşteri adı ve ürün/kod alanı boş olamaz!'}), 400
@@ -788,6 +817,7 @@ def add_invoice_item():
         calculated_price = 0.01
         price_missing = False
         deviation_info = None
+        blkodu = None  # Internal id of the matched product; the UI uses it to refresh the price info box
 
         cursor = conn.cursor()
 
@@ -851,6 +881,7 @@ def add_invoice_item():
                 'status': 'price_selection_required',
                 'product_name': display_name,
                 'stock_code': excel_stock_code,
+                'blkodu': blkodu,
                 'quantity': quantity,
                 'price_deviation': deviation_info
             })
@@ -881,6 +912,7 @@ def add_invoice_item():
             'status': 'success', 
             'product_name': display_name,
             'stock_code': excel_stock_code,
+            'blkodu': blkodu,
             'price': calculated_price,
             'price_missing': price_missing,
             'message': f"[{excel_stock_code}] {display_name} listeye eklendi."
@@ -994,6 +1026,13 @@ def update_invoice_item():
         if not customer_name or not code:
             return jsonify({'status': 'error', 'message': 'Müşteri adı ve ürün kodu zorunludur!'}), 400
 
+        try:
+            if action != 'update_price' and int(new_quantity) > MAX_ITEM_QUANTITY:
+                append_log(f"[HATA] Aşırı miktar güncellemesi reddedildi: {new_quantity}")
+                return jsonify({'status': 'error', 'message': f'Miktar çok yüksek ({new_quantity}). Barkod miktar kutusuna girmiş olabilir; en çok {MAX_ITEM_QUANTITY} adet girilebilir.'}), 400
+        except (ValueError, TypeError):
+            pass
+
         safe_file_name = "".join([c for c in customer_name if c.isalnum() or c in (' ', '_', '-')]).strip()
         xlsx_path = os.path.join(INVOICE_OUTPUT_DIR, f"{safe_file_name}.xlsx")
 
@@ -1046,23 +1085,52 @@ VK_CONTROL = 0x11
 VK_F5 = 0x74
 VK_V = 0x56
 
-# Tested screen coordinates (specific to the shop PC resolution/layout)
-COORD_ERP_TASKBAR = (467,750) # Akinsoft button on the taskbar
-COORD_SHORTCUTS_TAB = (127, 65)  # "Shortcuts" tab
-COORD_OPEN_INVOICE = (919, 528)          # "Domestic Sales Invoice" on the main screen
-COORD_ACTIONS_MENU = (1219, 112)          # "Actions" menu inside the invoice
-COORD_IMPORT_FROM_EXCEL = (1282, 457)          # "Import from Excel"
-COORD_FILE_PICKER = (966, 228)        # File picker trigger
+# Tested screen coordinates (specific to the shop PC resolution/layout).
+# Use koordinat_olc.py to measure a coordinate on the shop PC.
+COORD_ERP_TASKBAR = (467, 750)          # Akinsoft button on the taskbar
+COORD_SHORTCUTS_TAB = (127, 65)         # "Shortcuts" tab
+COORD_OPEN_INVOICE = (919, 528)         # "Domestic Sales Invoice" on the main screen
+COORD_ACTIONS_MENU = (1219, 112)        # "Actions" menu inside the invoice
+COORD_IMPORT_FROM_EXCEL = (1282, 457)   # "Import from Excel"
+COORD_FILE_PICKER = (966, 228)          # File picker trigger
 COORD_IMPORT_OPEN = (545, 555)          # Excel import "Open"
-COORD_IMPORT_CONFIRM = (692, 438)        # Import confirmation 1
-COORD_IMPORT_DONE = (753, 445)       # Import completed confirmation
-COORD_VAT_ZERO_BUTTON = (767, 190)           # VAT 0% button
-COORD_VAT_CONFIRM = (700, 439)            # VAT confirmation dialog
-COORD_SAVE = (794, 688)              # Save invoice
-COORD_PRINT_MENU = (1158, 110)        # Print menu
+COORD_IMPORT_CONFIRM = (692, 438)       # Import confirmation 1
+COORD_IMPORT_DONE = (753, 445)          # Import completed confirmation
+COORD_VAT_ZERO_BUTTON = (767, 190)      # VAT 0% button
+COORD_VAT_CONFIRM = (700, 439)          # VAT confirmation dialog
+COORD_SAVE = (794, 688)                 # Save invoice
+COORD_PRINT_MENU = (1158, 110)          # Print menu
 COORD_PRINT_TEMPLATE = (1190, 158)      # Template selection
-COORD_PRINT_CONFIRM = (734, 570)         # Print confirmation dialog
-COORD_CLOSE_INVOICE_TAB = (390,56) # Close invoice tab
+COORD_PRINT_CONFIRM = (734, 570)        # Print confirmation dialog
+COORD_CLOSE_INVOICE_TAB = (390, 56)     # Close invoice tab
+
+# After printing a multi-page invoice, Akinsoft shows a page-counter notice (2, 3, ...)
+# and the invoice tab will not close until it is confirmed. The button is clicked for
+# single-page invoices too. Set to None to skip this step.
+COORD_PAGE_COUNTER_OK = (634, 408)
+PAGE_COUNTER_WAIT_SECONDS = 1.0  # Extra wait for the notice to appear after the print confirmation
+
+# Akinsoft's "Import from Excel" takes longer the more line items the list has.
+# wait = BASE + item_count * PER_ITEM, clamped to [MIN, MAX].
+# If the item count cannot be read, the old fixed FALLBACK wait is used.
+IMPORT_WAIT_BASE = 4.0
+IMPORT_WAIT_PER_ITEM = 0.07
+IMPORT_WAIT_MIN = 5.0
+IMPORT_WAIT_MAX = 30.0
+IMPORT_WAIT_FALLBACK = 11.0
+
+
+def import_wait_seconds(excel_path):
+    """Return how long (seconds) to wait for the Excel import, based on the item count."""
+    try:
+        item_count = len(read_invoice_excel(excel_path))
+    except Exception:
+        item_count = 0
+    if item_count <= 0:
+        return IMPORT_WAIT_FALLBACK
+    wait = IMPORT_WAIT_BASE + item_count * IMPORT_WAIT_PER_ITEM
+    return max(IMPORT_WAIT_MIN, min(IMPORT_WAIT_MAX, wait))
+
 
 def mouse_click(x, y):
     nx = int(x * 65535 / SCREEN_WIDTH)
@@ -1073,10 +1141,18 @@ def mouse_click(x, y):
     time.sleep(0.08)
     user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
 
+
+def double_click(x, y):
+    mouse_click(x, y)
+    time.sleep(0.2)
+    mouse_click(x, y)
+
+
 def press_key(vk_code):
     user32.keybd_event(vk_code, 0, 0, 0)
     time.sleep(0.08)
     user32.keybd_event(vk_code, 0, KEYEVENTF_KEYUP, 0)
+
 
 def press_ctrl_v():
     user32.keybd_event(VK_CONTROL, 0, 0, 0)
@@ -1085,18 +1161,20 @@ def press_ctrl_v():
     user32.keybd_event(VK_V, 0, KEYEVENTF_KEYUP, 0)
     user32.keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0)
 
+
 def copy_and_paste(text):
     pyperclip.copy(text)
     time.sleep(0.15)
     press_ctrl_v()
     time.sleep(0.2)
 
+
 def is_erp_window_foreground():
     """Check whether the foreground window is Akinsoft/Wolvox."""
     active_hwnd = user32.GetForegroundWindow()
     if not active_hwnd:
         return False
-    
+
     length = user32.GetWindowTextLengthW(active_hwnd)
     if length > 0:
         buffer = ctypes.create_unicode_buffer(length + 1)
@@ -1106,17 +1184,23 @@ def is_erp_window_foreground():
             return True
     return False
 
+
 def bring_erp_to_front():
     """Leave Akinsoft alone if it is in front; otherwise click it on the taskbar."""
     if is_erp_window_foreground():
         return  # Already in front, do not touch anything
-    
+
     # Otherwise (behind or minimized) click it on the taskbar
     mouse_click(*COORD_ERP_TASKBAR)
     time.sleep(0.8)
-    
-def run_invoice_import_and_print_flow(customer_name_or_code, excel_path):
-    """Tested 14-step Akinsoft invoice import and print flow."""
+
+
+def run_invoice_import_and_print_flow(customer_name_or_code, excel_path, print_invoice=True):
+    """Tested 14-step Akinsoft invoice import and print flow.
+
+    With print_invoice=False the invoice is finished at step 13 (Save): the print
+    steps are skipped and the invoice tab is closed ("save only" mode).
+    """
 
     # 0. Bring Akinsoft to the front
     bring_erp_to_front()
@@ -1161,9 +1245,9 @@ def run_invoice_import_and_print_flow(customer_name_or_code, excel_path):
     mouse_click(*COORD_IMPORT_OPEN)
     time.sleep(0.8)
 
-    # 9. Import confirmation 1
+    # 9. Import confirmation 1 (wait scales with the number of items)
     mouse_click(*COORD_IMPORT_CONFIRM)
-    time.sleep(11)
+    time.sleep(import_wait_seconds(excel_path))
 
     # 10. Import completed confirmation
     mouse_click(*COORD_IMPORT_DONE)
@@ -1181,13 +1265,24 @@ def run_invoice_import_and_print_flow(customer_name_or_code, excel_path):
     mouse_click(*COORD_SAVE)
     time.sleep(1.0)
 
-    # 14. Print steps
-    mouse_click(*COORD_PRINT_MENU)
-    time.sleep(0.5)
-    mouse_click(*COORD_PRINT_TEMPLATE)
-    time.sleep(0.6)
-    mouse_click(*COORD_PRINT_CONFIRM)
-    time.sleep(3.5)
+    if print_invoice:
+        # 14. Print steps
+        mouse_click(*COORD_PRINT_MENU)
+        time.sleep(0.5)
+        mouse_click(*COORD_PRINT_TEMPLATE)
+        time.sleep(0.6)
+        mouse_click(*COORD_PRINT_CONFIRM)
+        time.sleep(1.0)
+
+        # 14.5 Dismiss the page-counter notice (the tab will not close until it is confirmed)
+        if COORD_PAGE_COUNTER_OK is not None:
+            time.sleep(PAGE_COUNTER_WAIT_SECONDS)
+            mouse_click(*COORD_PAGE_COUNTER_OK)
+            time.sleep(0.6)
+    else:
+        # Save-only mode: no printing. Give the save a little extra time
+        # before the tab is closed.
+        time.sleep(1.5)
 
     # 15. Close the domestic sales invoice tab
     mouse_click(*COORD_CLOSE_INVOICE_TAB)
@@ -1200,7 +1295,8 @@ def run_invoice_import_and_print_flow(customer_name_or_code, excel_path):
 COORD_CUSTOMER_REPORT = (1161, 212)
 COORD_REPORT_PRINT = (1200, 111)
 COORD_REPORT_CLOSE_TAB = (393, 59)
-COORD_REPORT_PRINT_CONFIRM = (1203,139)
+COORD_REPORT_PRINT_CONFIRM = (1203, 139)
+
 
 def run_customer_report_print_flow(customer_name_or_code):
     """Customer transaction report print flow recorded with a mouse recorder."""
@@ -1244,8 +1340,10 @@ def run_customer_report_print_flow(customer_name_or_code):
 
     return True
 
+
 @app.route('/api/customers/report/print', methods=['POST'])
 @auth_required
+@automation_lock_required
 def print_customer_report():
     try:
         data = request.get_json() or {}
@@ -1265,14 +1363,286 @@ def print_customer_report():
         return jsonify({'status': 'error', 'message': f'Rapor yazdırma hatası: {str(e)}'}), 500
 
 
+# ==============================================================================
+# POST-INVOICE CHECK: verify against Akinsoft's customer transactions (CARIHR)
+# Read-only: it only runs SELECT queries and never writes to the database.
+# How it works: before the invoice, the latest CARIHR record id is stored; after the
+# invoice, the transactions newer than that id are summed and compared with the list total.
+# ==============================================================================
+VERIFY_ATTEMPTS = 8           # How many times to look for the new transaction
+VERIFY_WAIT_SECONDS = 1.0     # Wait between attempts
+
+
+def format_try(amount):
+    """1250.5 -> '1.250,50' (Turkish number format)"""
+    s = f"{float(amount):,.2f}"
+    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def expected_invoice_total(excel_path):
+    """Total (quantity x price) and item count of the invoice list."""
+    items = read_invoice_excel(excel_path)
+    total = 0.0
+    for record in items:
+        price = float(record[2]) if len(record) >= 3 else 0.01
+        total += record[1] * price
+    return round(total, 2), len(items)
+
+
+def find_customer_candidates(conn, customer_name, customer_code):
+    """Customer record(s) the invoice is expected to land on (exact match first, then similar)."""
+    cursor = conn.cursor()
+    name_upper = to_turkish_upper(customer_name)
+
+    if customer_code:
+        cursor.execute("""
+            SELECT FIRST 10 C.BLKODU, TRIM(C.CARIKODU), C.TICARI_UNVANI, C.ADI_SOYADI
+            FROM CARI C
+            WHERE C.AKTIF = 1
+            AND UPPER(TRIM(C.CARIKODU)) = ?
+        """, (to_turkish_upper(customer_code)[:30],))
+        rows = cursor.fetchall()
+    else:
+        cursor.execute("""
+            SELECT FIRST 10 C.BLKODU, TRIM(C.CARIKODU), C.TICARI_UNVANI, C.ADI_SOYADI
+            FROM CARI C
+            WHERE C.AKTIF = 1
+            AND (UPPER(TRIM(C.CARIKODU)) = ?
+                 OR UPPER(TRIM(COALESCE(C.TICARI_UNVANI, ''))) = ?
+                 OR UPPER(TRIM(COALESCE(C.ADI_SOYADI, ''))) = ?)
+        """, (name_upper[:30], name_upper, name_upper))
+        rows = cursor.fetchall()
+
+        if not rows:
+            cursor.execute("""
+                SELECT FIRST 5 C.BLKODU, TRIM(C.CARIKODU), C.TICARI_UNVANI, C.ADI_SOYADI
+                FROM CARI C
+                WHERE C.AKTIF = 1
+                AND (UPPER(COALESCE(C.TICARI_UNVANI, '')) LIKE ?
+                     OR UPPER(COALESCE(C.ADI_SOYADI, '')) LIKE ?)
+            """, (f"%{name_upper}%", f"%{name_upper}%"))
+            rows = cursor.fetchall()
+
+    candidates = []
+    for r in rows:
+        code = str(r[1]).strip() if r[1] else ""
+        title = str(r[2]).strip() if r[2] else (str(r[3]).strip() if r[3] else code)
+        candidates.append({"blkodu": r[0], "code": code, "title": title})
+    return candidates
+
+
+def new_transactions_by_customer(conn, previous_max_id):
+    """Sum the (non-deleted) customer transactions added after previous_max_id, per customer.
+    Returns: {customer_blkodu: (total_debit, total_credit, count)}"""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT H.BLCRKODU, COALESCE(SUM(H.KPB_BTUT), 0), COALESCE(SUM(H.KPB_ATUT), 0), COUNT(*)
+        FROM CARIHR H
+        WHERE H.BLKODU > ?
+        AND (H.SILINDI = 0 OR H.SILINDI IS NULL)
+        GROUP BY H.BLCRKODU
+    """, (previous_max_id,))
+    groups = {}
+    for r in cursor.fetchall():
+        groups[r[0]] = (float(r[1] or 0.0), float(r[2] or 0.0), int(r[3] or 0))
+    return groups
+
+
+def get_customer_summary(conn, blkodu):
+    """A customer's code, title and current net balance (debit - credit)."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT TRIM(CARIKODU), TICARI_UNVANI, ADI_SOYADI FROM CARI WHERE BLKODU = ?", (blkodu,))
+    r = cursor.fetchone()
+    code = str(r[0]).strip() if r and r[0] else ""
+    title = str(r[1]).strip() if r and r[1] else (str(r[2]).strip() if r and r[2] else code)
+
+    cursor.execute("""
+        SELECT COALESCE(SUM(H.KPB_BTUT), 0), COALESCE(SUM(H.KPB_ATUT), 0)
+        FROM CARIHR H
+        WHERE H.BLCRKODU = ?
+        AND (H.SILINDI = 0 OR H.SILINDI IS NULL)
+    """, (blkodu,))
+    b = cursor.fetchone()
+    balance = float(b[0] or 0.0) - float(b[1] or 0.0)
+    return {"code": code, "title": title, "balance": balance}
+
+
+def get_latest_transaction_id(conn):
+    cursor = conn.cursor()
+    cursor.execute("SELECT COALESCE(MAX(BLKODU), 0) FROM CARIHR")
+    return int(cursor.fetchone()[0] or 0)
+
+
+def prepare_invoice_check(customer_name, customer_code, excel_path):
+    """Called BEFORE the invoice is created. Returns None on failure (the check is
+    skipped; the invoice flow is never blocked)."""
+    try:
+        expected, item_count = expected_invoice_total(excel_path)
+        conn = get_db_connection()
+        if conn is None:
+            return None
+        try:
+            candidates = find_customer_candidates(conn, customer_name, customer_code)
+            previous_max_id = get_latest_transaction_id(conn)
+        finally:
+            try: conn.close()
+            except Exception: pass
+        return {
+            "expected": expected,
+            "item_count": item_count,
+            "candidates": candidates,
+            "previous_max_id": previous_max_id,
+            "customer_name": customer_name,
+        }
+    except Exception as e:
+        append_log(f"[FATURA KONTROL HATA] Hazırlık yapılamadı: {str(e)}")
+        return None
+
+
+def evaluate_invoice_check(groups, candidate_ids, expected, tolerance):
+    """Compare the new customer transactions with the expected invoice total."""
+    equal = lambda a, b: abs(a - b) <= tolerance
+
+    for blkodu in candidate_ids:
+        if blkodu in groups and equal(groups[blkodu][0], expected):
+            return {"status": "verified", "customer_blkodu": blkodu, "posted": groups[blkodu][0]}
+
+    for blkodu, (debit, _credit, _count) in groups.items():
+        if blkodu not in candidate_ids and equal(debit, expected):
+            return {"status": "wrong_customer", "customer_blkodu": blkodu, "posted": debit}
+
+    candidate_debit = sum(groups[b][0] for b in candidate_ids if b in groups)
+    if candidate_debit > 0:
+        return {"status": "amount_mismatch", "customer_blkodu": None, "posted": candidate_debit}
+
+    return {"status": "not_found", "customer_blkodu": None, "posted": 0.0}
+
+
+def balance_text(balance):
+    if balance > 0.01:
+        return f"{format_try(balance)} TL (Borçlu)"
+    if balance < -0.01:
+        return f"{format_try(abs(balance))} TL (Alacaklı)"
+    return "0,00 TL (Hesap kapalı)"
+
+
+def poll_new_transactions(previous_max_id, evaluate, final_statuses, log_prefix):
+    """Read the new CARIHR transactions up to VERIFY_ATTEMPTS times until `evaluate`
+    returns one of `final_statuses`. Returns (result, groups)."""
+    result, groups = None, {}
+    for attempt in range(VERIFY_ATTEMPTS):
+        conn = get_db_connection()
+        if conn is not None:
+            try:
+                groups = new_transactions_by_customer(conn, previous_max_id)
+            except Exception as e:
+                append_log(f"[{log_prefix} HATA] Hareket okunamadı: {str(e)}")
+            finally:
+                try: conn.close()
+                except Exception: pass
+        result = evaluate(groups)
+        if result["status"] in final_statuses:
+            break
+        if attempt < VERIFY_ATTEMPTS - 1:
+            time.sleep(VERIFY_WAIT_SECONDS)
+    return result, groups
+
+
+def load_customer_summary(blkodu):
+    if blkodu is None:
+        return None
+    conn = get_db_connection()
+    if conn is None:
+        return None
+    try:
+        return get_customer_summary(conn, blkodu)
+    except Exception:
+        return None
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+def describe_groups(groups):
+    return ", ".join(
+        f"cari {code}: borç {v[0]:.2f} alacak {v[1]:.2f} adet {v[2]}" for code, v in groups.items()
+    ) or "yeni hareket yok"
+
+
+def finish_invoice_check(check):
+    """Called AFTER the invoice is created; reads the customer transactions and returns
+    the result. Never raises."""
+    if check is None:
+        return {
+            "status": "skipped",
+            "message": "Cari hareket kontrolü yapılamadı (veritabanına ulaşılamadı). Faturayı Akınsoft'ta elle kontrol et."
+        }
+    try:
+        expected = check["expected"]
+        tolerance = max(0.05, 0.01 * check["item_count"])
+        candidate_ids = [c["blkodu"] for c in check["candidates"]]
+
+        result, groups = poll_new_transactions(
+            check["previous_max_id"],
+            lambda g: evaluate_invoice_check(g, candidate_ids, expected, tolerance),
+            ("verified", "wrong_customer"),
+            "FATURA KONTROL",
+        )
+
+        status = result["status"]
+        posted = result["posted"]
+        customer = load_customer_summary(result["customer_blkodu"])
+
+        many_candidates = len(check["candidates"]) > 1
+        if status == "verified":
+            message = (f"✓ Cari hareketi doğrulandı: {customer['title'] if customer else 'cari'} carisine "
+                       f"{format_try(posted)} TL borç işlendi (liste toplamı {format_try(expected)} TL).")
+            if customer:
+                message += f" Güncel bakiye: {balance_text(customer['balance'])}."
+            if many_candidates:
+                message += " Not: benzer birden fazla cari var, yukarıdaki cariyi kontrol et."
+        elif status == "wrong_customer":
+            target = f"{customer['title']} ({customer['code']})" if customer else "başka bir cari"
+            message = (f"YANLIŞ CARİ OLABİLİR! Fatura '{check['customer_name']}' carisine değil, "
+                       f"'{target}' carisine {format_try(posted)} TL olarak işlenmiş görünüyor. "
+                       f"Akınsoft'ta faturayı HEMEN kontrol et.")
+        elif status == "amount_mismatch":
+            message = (f"TUTAR FARKI! Cariye {format_try(posted)} TL işlendi ama listenin toplamı "
+                       f"{format_try(expected)} TL. Akınsoft'taki faturayı kontrol et.")
+        else:
+            message = (f"FATURA GÖRÜNMÜYOR! Cari hareketlerinde {format_try(expected)} TL'lik yeni bir fatura "
+                       f"borcu bulunamadı. Fatura oluşmamış olabilir; Akınsoft'ı kontrol et.")
+
+        append_log(f"[FATURA KONTROL] {status} | {check['customer_name']} | beklenen: {expected:.2f} | "
+                   f"islenen: {posted:.2f} | {describe_groups(groups)}")
+
+        return {
+            "status": status,
+            "message": message,
+            "expected": expected,
+            "posted": round(posted, 2),
+            "customer_code": customer["code"] if customer else "",
+            "customer_title": customer["title"] if customer else "",
+            "balance": round(customer["balance"], 2) if customer else None,
+        }
+    except Exception as e:
+        append_log(f"[FATURA KONTROL HATA] {str(e)}")
+        return {
+            "status": "skipped",
+            "message": "Cari hareket kontrolü sırasında hata oluştu. Faturayı Akınsoft'ta elle kontrol et."
+        }
+
 
 @app.route('/api/invoices/print', methods=['POST'])
 @auth_required
+@automation_lock_required
 def print_invoice_via_erp():
     try:
         data = request.get_json() or {}
         customer_name = str(data.get('customer_name', '')).strip()
         customer_code = str(data.get('customer_code', '')).strip()
+        # Printing is skipped only when save_only is explicitly true; otherwise the invoice is printed.
+        save_only = data.get('save_only') is True
 
         if not customer_name:
             return jsonify({'status': 'error', 'message': 'Müşteri adı boş gönderilemez.'}), 400
@@ -1287,13 +1657,26 @@ def print_invoice_via_erp():
             else:
                 return jsonify({'status': 'error', 'message': f'Fatura Excel dosyası bulunamadı: {safe_file_name}.xlsx'}), 404
 
+        # Never send an invoice that still has unpriced (0.01 TL) items to Akinsoft
+        unpriced = [str(r[0]) for r in read_invoice_excel(file_path) if float(r[2]) <= UNPRICED_THRESHOLD]
+        if unpriced:
+            shown = ", ".join(unpriced[:8]) + (f" ... (+{len(unpriced) - 8})" if len(unpriced) > 8 else "")
+            append_log(f"[AKINSOFT ENGEL] Fiyatsız kalem var, fatura gönderilmedi: {safe_file_name} -> {shown}")
+            return jsonify({'status': 'error', 'message': f'Listede fiyatı belirlenmemiş (0,01 TL) {len(unpriced)} kalem var: {shown}. Önce "Fiyat Değiştir" ile fiyatlarını girin, sonra tekrar deneyin.'}), 400
+
         # Customer lookup parameter: customer code if available, otherwise name
         target_customer = customer_code if customer_code else customer_name
 
-        # Run the full, tested automation flow
-        run_invoice_import_and_print_flow(target_customer, file_path)
+        # Before the invoice: expected total, candidate customers and the CARIHR snapshot
+        check = prepare_invoice_check(customer_name, customer_code, file_path)
 
-        # Move the printed file to the archive folder (prevents duplicates)
+        # Run the full, tested automation flow (print steps are skipped in save-only mode)
+        run_invoice_import_and_print_flow(target_customer, file_path, print_invoice=not save_only)
+
+        # After the invoice: verify against the customer transactions (never raises)
+        verification = finish_invoice_check(check)
+
+        # Move the processed file to the archive folder (prevents duplicates)
         archive_dir = os.path.join(INVOICE_OUTPUT_DIR, "arsiv")
         os.makedirs(archive_dir, exist_ok=True)
 
@@ -1301,20 +1684,445 @@ def print_invoice_via_erp():
         extension = os.path.splitext(file_path)[1]
         archive_target = os.path.join(archive_dir, f"{safe_file_name}_{timestamp}{extension}")
 
+        archived = False
         try:
             os.replace(file_path, archive_target)
+            archived = True
         except Exception as e:
             print(f"[UYARI] Dosya arşive taşınamadı: {e}")
 
-        append_log(f"[AKINSOFT YAZDIR] Fatura başarıyla Akınsoft'a aktarıldı, yazdırıldı ve arşivlendi: {safe_file_name}")
-        return jsonify({
-            'status': 'success',
-            'message': f'"{customer_name}" faturası Akınsoft\'a aktarıldı, yazdırıldı ve arşive taşındı.'
-        })
+        # If the check found a problem, say where the list file is (so it can be restored by hand)
+        if verification.get('status') != 'verified' and archived:
+            verification['message'] += f" (Liste dosyası: arsiv\\{os.path.basename(archive_target)})"
+
+        if save_only:
+            append_log(f"[AKINSOFT KAYDET] Fatura Akınsoft'a aktarıldı ve kaydedildi (YAZDIRILMADI), arşivlendi: {safe_file_name}")
+            message = f'"{customer_name}" faturası Akınsoft\'a aktarıldı ve kaydedildi (yazdırılmadı), arşive taşındı.'
+        else:
+            append_log(f"[AKINSOFT YAZDIR] Fatura başarıyla Akınsoft'a aktarıldı, yazdırıldı ve arşivlendi: {safe_file_name}")
+            message = f'"{customer_name}" faturası Akınsoft\'a aktarıldı, yazdırıldı ve arşive taşındı.'
+        return jsonify({'status': 'success', 'message': message, 'verification': verification})
 
     except Exception as e:
         append_log(f"[HATA] Akınsoft Yazdırma Hatası: {str(e)}")
         return jsonify({'status': 'error', 'message': f'Otomasyon sırasında hata oluştu: {str(e)}'}), 500
+
+
+# ==============================================================================
+# CUSTOMER COLLECTION / PAYMENT (Cari Tahsilat / Cari Tediye — cash or document)
+# Fills in and saves Akinsoft's collection/payment screen through UI automation.
+# It never writes to the database. Read-only queries are used to: match the customer
+# exactly (nothing starts if it is ambiguous), read the balance before the transaction,
+# and verify the new CARIHR record afterwards.
+# ==============================================================================
+MAX_TRANSACTION_AMOUNT = 1000000   # Highest amount (TL) accepted at once; guards against extra zeros
+DUPLICATE_WINDOW_SECONDS = 120     # Warn if the same customer + amount comes again within this window
+
+# --- Coordinates: measure them on the shop PC (koordinat_olc.py helps). Automation does NOT start while one is None. ---
+# Taken from the recorder files (cash collection + document payment).
+COORD_COLLECTION_MENU = (1171, 247)         # "Cari Tahsilat" in the shortcuts list (double-clicked)
+COORD_PAYMENT_MENU = (1194, 328)            # "Cari Tediye" in the shortcuts list (double-clicked)
+COORD_CUSTOMER_LIST_FIRST_ROW = (595, 181)  # First row of the customer finder after filtering (double-click selects it)
+COORD_MAIN_SCREEN_TAB = (127, 65)           # Workaround for an Akinsoft bug: the "main screen" tab (= Shortcuts tab)
+COORD_COLLECTION_TAB = (288, 58)            # The "Cari Tahsilat" tab at the top
+COORD_PAYMENT_TAB = None                    # The "Cari Tediye" tab; None = same place as the collection tab
+COORD_METHOD_DROPDOWN = (709, 331)          # The dropdown that shows "Nakit" (used only to pick "Evrak")
+COORD_METHOD_DOCUMENT = (708, 366)          # "Evrak" in the opened dropdown
+COORD_TRANSACTION_AMOUNT = (523, 439)       # Credit / debit amount box
+COORD_TRANSACTION_DESCRIPTION = (771, 518)  # Description box
+COORD_TRANSACTION_SAVE = (840, 686)         # Green confirm (Save) button
+COORD_TRANSACTION_CLOSE = (1020, 184)       # "Close" button of the screen
+
+TRANSACTION_TYPES = ('collection', 'payment')   # collection = tahsilat, payment = tediye
+PAYMENT_METHODS = ('cash', 'document')          # cash = nakit, document = evrak
+
+_recent_transactions = {}
+_recent_transactions_lock = threading.Lock()
+
+
+def type_label(tx_type):
+    return "tahsilat" if tx_type == 'collection' else "tediye"
+
+
+def method_label(method):
+    return "NAKİT" if method == 'cash' else "EVRAK"
+
+
+def missing_transaction_coordinates(tx_type, method, has_description):
+    """Names of the coordinates this transaction needs that are not defined yet (None)."""
+    required = {
+        "COORD_SHORTCUTS_TAB": COORD_SHORTCUTS_TAB,
+        "COORD_CUSTOMER_LIST_FIRST_ROW": COORD_CUSTOMER_LIST_FIRST_ROW,
+        "COORD_MAIN_SCREEN_TAB": COORD_MAIN_SCREEN_TAB,
+        "COORD_TRANSACTION_AMOUNT": COORD_TRANSACTION_AMOUNT,
+        "COORD_TRANSACTION_SAVE": COORD_TRANSACTION_SAVE,
+        "COORD_TRANSACTION_CLOSE": COORD_TRANSACTION_CLOSE,
+    }
+    if tx_type == 'collection':
+        required["COORD_COLLECTION_MENU"] = COORD_COLLECTION_MENU
+        required["COORD_COLLECTION_TAB"] = COORD_COLLECTION_TAB
+    else:
+        required["COORD_PAYMENT_MENU"] = COORD_PAYMENT_MENU
+        if COORD_PAYMENT_TAB is None:
+            required["COORD_COLLECTION_TAB (or COORD_PAYMENT_TAB)"] = COORD_COLLECTION_TAB
+    if method == 'document':
+        required["COORD_METHOD_DROPDOWN"] = COORD_METHOD_DROPDOWN
+        required["COORD_METHOD_DOCUMENT"] = COORD_METHOD_DOCUMENT
+    if has_description:
+        required["COORD_TRANSACTION_DESCRIPTION"] = COORD_TRANSACTION_DESCRIPTION
+    return [name for name, value in required.items() if value is None]
+
+
+def parse_transaction_request(data):
+    """Validate the request. Returns (params, error_message). The amount must be a positive WHOLE number."""
+    tx_type = str(data.get('type', '')).strip().lower()
+    method = str(data.get('method', 'cash')).strip().lower()
+    if tx_type not in TRANSACTION_TYPES:
+        return None, "İşlem türü tahsilat veya tediye olmalı."
+    if method not in PAYMENT_METHODS:
+        return None, "Ödeme şekli nakit veya evrak olmalı."
+
+    raw_amount = str(data.get('amount', '')).strip()
+    if not re.fullmatch(r'\d{1,9}', raw_amount):
+        return None, "Tutar sadece rakamlardan oluşan tam sayı olmalı (örn: 10000)."
+    amount = int(raw_amount)
+    if amount <= 0:
+        return None, "Tutar sıfırdan büyük olmalı."
+    if amount > MAX_TRANSACTION_AMOUNT:
+        return None, f"Tutar çok yüksek ({format_try(amount)} TL). Güvenlik sınırı {format_try(MAX_TRANSACTION_AMOUNT)} TL."
+
+    description = " ".join(str(data.get('description', '')).split())[:200]
+
+    return {
+        "type": tx_type, "method": method, "amount": amount, "description": description,
+        "customer_code": str(data.get('customer_code', '')).strip(),
+        "customer_name": str(data.get('customer_name', '')).strip(),
+    }, None
+
+
+def resolve_customer_exactly(conn, customer_code, customer_name):
+    """Find the customer by an EXACT match only (no guessing by similar names).
+    Returns: ('single', {blkodu, code, title, full_name}) | ('none', None) | ('ambiguous', None)"""
+    cursor = conn.cursor()
+    if customer_code:
+        cursor.execute("""
+            SELECT FIRST 5 C.BLKODU, TRIM(C.CARIKODU), C.TICARI_UNVANI, C.ADI_SOYADI
+            FROM CARI C
+            WHERE C.AKTIF = 1 AND UPPER(TRIM(C.CARIKODU)) = ?
+        """, (to_turkish_upper(customer_code)[:30],))
+    elif customer_name:
+        name_upper = to_turkish_upper(customer_name)
+        cursor.execute("""
+            SELECT FIRST 5 C.BLKODU, TRIM(C.CARIKODU), C.TICARI_UNVANI, C.ADI_SOYADI
+            FROM CARI C
+            WHERE C.AKTIF = 1
+            AND (UPPER(TRIM(C.CARIKODU)) = ?
+                 OR UPPER(TRIM(COALESCE(C.TICARI_UNVANI, ''))) = ?
+                 OR UPPER(TRIM(COALESCE(C.ADI_SOYADI, ''))) = ?)
+        """, (name_upper[:30], name_upper, name_upper))
+    else:
+        return 'none', None
+    rows = cursor.fetchall()
+    if not rows:
+        return 'none', None
+    if len(rows) > 1:
+        return 'ambiguous', None
+    r = rows[0]
+    code = str(r[1]).strip() if r[1] else ""
+    title = str(r[2]).strip() if r[2] else ""
+    full_name = str(r[3]).strip() if r[3] else ""
+    return 'single', {"blkodu": r[0], "code": code, "title": title or full_name or code, "full_name": full_name}
+
+
+def choose_erp_filter_text(conn, customer):
+    """Pick the text to paste into Akinsoft's customer search: with this text ONLY this
+    customer must show up. Returns None if no candidate gives a single match."""
+    candidates = []
+    for text in (customer["title"], customer["code"], customer["full_name"]):
+        if text and text not in candidates:
+            candidates.append(text)
+    cursor = conn.cursor()
+    for text in candidates:
+        pattern = to_turkish_upper(text)
+        cursor.execute("""
+            SELECT COUNT(*) FROM CARI C
+            WHERE C.AKTIF = 1
+            AND (UPPER(TRIM(C.CARIKODU)) LIKE ?
+                 OR UPPER(COALESCE(C.TICARI_UNVANI, '')) LIKE ?
+                 OR UPPER(COALESCE(C.ADI_SOYADI, '')) LIKE ?)
+        """, (f"%{pattern}%", f"%{pattern}%", f"%{pattern}%"))
+        if int(cursor.fetchone()[0] or 0) == 1:
+            return text
+    return None
+
+
+def expected_balance_after(balance, tx_type, amount):
+    """A collection is posted as CREDIT (balance goes down), a payment as DEBIT (balance goes up)."""
+    return balance - amount if tx_type == 'collection' else balance + amount
+
+
+def prepare_transaction(p):
+    """BEFORE the transaction: resolve the customer exactly, pick the Akinsoft search text,
+    read the balance and the latest CARIHR id. Returns (context, error_message).
+    Nothing starts if the database is unreachable or the customer is ambiguous."""
+    conn = get_db_connection()
+    if conn is None:
+        return None, "Veritabanına ulaşılamadı. Para hareketi doğrulanamayacağı için işlem başlatılmadı."
+    try:
+        match, customer = resolve_customer_exactly(conn, p["customer_code"], p["customer_name"])
+        if match == 'none':
+            return None, ("Bu cari birebir bulunamadı. Cari adını yazıp büyüteç (Cari Ara) listesinden "
+                          "seçerek tekrar dene.")
+        if match == 'ambiguous':
+            return None, ("Bu isim birden fazla cariyle eşleşiyor. Büyüteçle doğru cariyi seç. Hâlâ olmuyorsa "
+                          "bu işlemi Akınsoft'ta elle gir.")
+        filter_text = choose_erp_filter_text(conn, customer)
+        if filter_text is None:
+            return None, (f"'{customer['title']}' adı Akınsoft cari aramasında başka carilerle de eşleşiyor; "
+                          f"otomasyon yanlış cariyi seçebilir. Bu işlemi Akınsoft'ta elle gir.")
+        summary = get_customer_summary(conn, customer["blkodu"])
+        previous_max_id = get_latest_transaction_id(conn)
+    except Exception as e:
+        append_log(f"[CARI ISLEM HATA] Hazırlık yapılamadı: {str(e)}")
+        return None, "Cari bilgisi okunurken hata oluştu. İşlem başlatılmadı."
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+    return {
+        "customer": customer, "filter_text": filter_text, "balance_before": summary["balance"],
+        "expected_balance": expected_balance_after(summary["balance"], p["type"], p["amount"]),
+        "previous_max_id": previous_max_id,
+    }, None
+
+
+def is_duplicate_transaction(customer_blkodu, p):
+    key = (customer_blkodu, p["type"], p["amount"])
+    now = time.time()
+    with _recent_transactions_lock:
+        for k in [k for k, t in _recent_transactions.items() if now - t > DUPLICATE_WINDOW_SECONDS]:
+            del _recent_transactions[k]
+        return key in _recent_transactions
+
+
+def remember_transaction(customer_blkodu, p):
+    with _recent_transactions_lock:
+        _recent_transactions[(customer_blkodu, p["type"], p["amount"])] = time.time()
+
+
+def run_customer_transaction_flow(filter_text, tx_type, method, amount, description):
+    """Click chain that fills in and saves Akinsoft's collection/payment screen.
+    Waits come from the user's recordings (with some margin)."""
+    bring_erp_to_front()
+
+    # 1. Shortcuts tab -> Cari Tahsilat / Cari Tediye (the menu item is double-clicked)
+    mouse_click(*COORD_SHORTCUTS_TAB)
+    time.sleep(0.8)
+    menu = COORD_COLLECTION_MENU if tx_type == 'collection' else COORD_PAYMENT_MENU
+    double_click(*menu)
+    time.sleep(2.0)
+
+    # 2. The customer finder opens with the cursor in its search box: paste + Enter filters it.
+    #    Enter does not select a single match by itself, so the first row is double-clicked.
+    #    (The server already checked that this text yields exactly one customer in Akinsoft.)
+    copy_and_paste(filter_text)
+    time.sleep(0.3)
+    press_key(VK_RETURN)
+    time.sleep(1.5)
+    double_click(*COORD_CUSTOMER_LIST_FIRST_ROW)
+    time.sleep(1.5)
+
+    # 3. Akinsoft bug: the screen stays behind. Click the main screen tab, then the transaction tab.
+    mouse_click(*COORD_MAIN_SCREEN_TAB)
+    time.sleep(0.8)
+    if tx_type == 'collection':
+        mouse_click(*COORD_COLLECTION_TAB)
+    else:
+        mouse_click(*(COORD_PAYMENT_TAB or COORD_COLLECTION_TAB))
+    time.sleep(2.0)
+
+    # 4. For a document, change the transaction method (default is cash)
+    if method == 'document':
+        mouse_click(*COORD_METHOD_DROPDOWN)
+        time.sleep(0.8)
+        mouse_click(*COORD_METHOD_DOCUMENT)
+        time.sleep(0.8)
+
+    # 5. Amount (clicked for cash too; harmless if the cursor is already there)
+    mouse_click(*COORD_TRANSACTION_AMOUNT)
+    time.sleep(0.7)
+    copy_and_paste(str(int(amount)))
+    time.sleep(0.8)
+
+    # 6. Description (only if there is one)
+    if description:
+        mouse_click(*COORD_TRANSACTION_DESCRIPTION)
+        time.sleep(0.6)
+        copy_and_paste(description)
+        time.sleep(0.8)
+
+    # 7. Save, then close the screen
+    mouse_click(*COORD_TRANSACTION_SAVE)
+    time.sleep(2.0)
+    mouse_click(*COORD_TRANSACTION_CLOSE)
+    time.sleep(1.0)
+    return True
+
+
+def evaluate_transaction(groups, target_blkodu, tx_type, amount, tolerance=0.01):
+    """Compare the new customer transactions with what was expected.
+    groups: {customer: (debit, credit, count)}. A collection is expected as CREDIT, a payment as DEBIT."""
+    side = 1 if tx_type == 'collection' else 0
+    other_side = 1 - side
+    equal = lambda a, b: abs(a - b) <= tolerance
+
+    if target_blkodu in groups and equal(groups[target_blkodu][side], amount):
+        return {"status": "verified", "customer_blkodu": target_blkodu, "posted": groups[target_blkodu][side]}
+    for blkodu, g in groups.items():
+        if blkodu != target_blkodu and equal(g[side], amount):
+            return {"status": "wrong_customer", "customer_blkodu": blkodu, "posted": g[side]}
+    if target_blkodu in groups:
+        if equal(groups[target_blkodu][other_side], amount):
+            return {"status": "reversed", "customer_blkodu": target_blkodu, "posted": groups[target_blkodu][other_side]}
+        if groups[target_blkodu][side] > 0:
+            return {"status": "amount_mismatch", "customer_blkodu": target_blkodu, "posted": groups[target_blkodu][side]}
+    return {"status": "not_found", "customer_blkodu": None, "posted": 0.0}
+
+
+def verify_transaction(context, p):
+    """AFTER the transaction: read CARIHR and return the result. Never raises."""
+    label = type_label(p["type"])
+    amount = float(p["amount"])
+    target = context["customer"]["blkodu"]
+    title = context["customer"]["title"]
+    try:
+        result, groups = poll_new_transactions(
+            context["previous_max_id"],
+            lambda g: evaluate_transaction(g, target, p["type"], amount),
+            ("verified", "wrong_customer", "reversed"),
+            "CARI ISLEM KONTROL",
+        )
+        status, posted = result["status"], result["posted"]
+        customer = load_customer_summary(result["customer_blkodu"])
+
+        if status == "verified":
+            message = f"✓ {title} carisine {format_try(posted)} TL {label} işlendi ({method_label(p['method'])})."
+            if customer:
+                message += f" Bakiye: {balance_text(context['balance_before'])} → {balance_text(customer['balance'])}."
+                if abs(customer["balance"] - context["expected_balance"]) > 0.01:
+                    message += (f" Not: beklenen bakiye {balance_text(context['expected_balance'])} idi; "
+                                f"arada başka bir hareket işlenmiş olabilir.")
+        elif status == "wrong_customer":
+            other = f"{customer['title']} ({customer['code']})" if customer else "başka bir cari"
+            message = (f"YANLIŞ CARİ OLABİLİR! {format_try(posted)} TL {label} '{title}' carisine değil, "
+                       f"'{other}' carisine işlenmiş görünüyor. Akınsoft'ta HEMEN kontrol et ve gerekirse sil.")
+        elif status == "reversed":
+            message = (f"TERS YÖNDE İŞLENMİŞ OLABİLİR! '{title}' carisinde {format_try(posted)} TL "
+                       f"{'borç' if p['type'] == 'collection' else 'alacak'} hareketi görünüyor. Akınsoft'ta kontrol et.")
+        elif status == "amount_mismatch":
+            message = (f"TUTAR FARKI! '{title}' carisine {format_try(posted)} TL işlendi ama girilen "
+                       f"{format_try(amount)} TL idi. Akınsoft'ta kontrol et.")
+        else:
+            message = (f"KAYIT GÖRÜNMÜYOR! '{title}' carisinde {format_try(amount)} TL'lik yeni {label} "
+                       f"hareketi bulunamadı. İşlem kaydedilmemiş olabilir; Akınsoft'ı kontrol et.")
+
+        append_log(f"[CARI ISLEM KONTROL] {status} | {label} {p['method']} | {title} | beklenen: {amount:.2f} | "
+                   f"islenen: {posted:.2f} | {describe_groups(groups)}")
+
+        return {
+            "status": status, "message": message, "amount": amount, "posted": round(posted, 2),
+            "balance_before": round(context["balance_before"], 2),
+            "balance": round(customer["balance"], 2) if customer else None,
+        }
+    except Exception as e:
+        append_log(f"[CARI ISLEM KONTROL HATA] {str(e)}")
+        return {"status": "skipped", "message": "Kayıt kontrolü sırasında hata oluştu. İşlemi Akınsoft'ta elle kontrol et."}
+
+
+@app.route('/api/customers/transactions/preview', methods=['POST'])
+@auth_required
+def preview_customer_transaction():
+    """For the confirmation screen: resolves the customer exactly and returns the current and
+    expected balance. Does NOT touch Akinsoft."""
+    try:
+        p, error = parse_transaction_request(request.get_json() or {})
+        if error:
+            return jsonify({'status': 'error', 'message': error}), 400
+        missing = missing_transaction_coordinates(p["type"], p["method"], bool(p["description"]))
+        if missing:
+            return jsonify({'status': 'error', 'message': "Otomasyon koordinatları tanımlı değil (app.py): " + ", ".join(missing)}), 400
+        context, error = prepare_transaction(p)
+        if error:
+            return jsonify({'status': 'error', 'message': error}), 400
+        return jsonify({
+            'status': 'success',
+            'customer_code': context["customer"]["code"],
+            'title': context["customer"]["title"],
+            'balance': round(context["balance_before"], 2),
+            'balance_text': balance_text(context["balance_before"]),
+            'expected_balance': round(context["expected_balance"], 2),
+            'expected_balance_text': balance_text(context["expected_balance"]),
+            'amount_text': format_try(p["amount"]),
+        })
+    except Exception as e:
+        append_log(f"[CARI ISLEM ONIZLE HATA] {str(e)}")
+        return jsonify({'status': 'error', 'message': f'Önizleme hatası: {str(e)}'}), 500
+
+
+@app.route('/api/customers/transactions', methods=['POST'])
+@auth_required
+@automation_lock_required
+def create_customer_transaction():
+    """Posts a customer collection / payment in Akinsoft and verifies it from CARIHR."""
+    try:
+        data = request.get_json() or {}
+        p, error = parse_transaction_request(data)
+        if error:
+            return jsonify({'status': 'error', 'message': error}), 400
+        missing = missing_transaction_coordinates(p["type"], p["method"], bool(p["description"]))
+        if missing:
+            return jsonify({'status': 'error', 'message': "Otomasyon koordinatları tanımlı değil (app.py): " + ", ".join(missing)}), 400
+
+        context, error = prepare_transaction(p)
+        if error:
+            return jsonify({'status': 'error', 'message': error}), 400
+
+        label = type_label(p["type"])
+        customer = context["customer"]
+        if data.get('confirm_duplicate') is not True and is_duplicate_transaction(customer["blkodu"], p):
+            return jsonify({
+                'status': 'duplicate',
+                'message': (f"Son {DUPLICATE_WINDOW_SECONDS // 60} dakika içinde '{customer['title']}' için aynı tutarda "
+                            f"({format_try(p['amount'])} TL) {label} zaten girildi. Yanlışlıkla ikinci kez mi basıldı?")
+            }), 409
+
+        append_log(f"[CARI ISLEM BASLADI] {label} {p['method']} | {customer['title']} ({customer['code']}) | "
+                   f"{p['amount']} TL | filtre: {context['filter_text']} | açıklama: {p['description'] or '-'}")
+        # Even if the flow breaks halfway the record may exist, so mark it before running
+        remember_transaction(customer["blkodu"], p)
+
+        flow_error = None
+        try:
+            run_customer_transaction_flow(context["filter_text"], p["type"], p["method"], p["amount"], p["description"])
+        except Exception as e:
+            flow_error = str(e)
+            append_log(f"[CARI ISLEM AKIS HATA] {flow_error}")
+
+        verification = verify_transaction(context, p)
+
+        if flow_error:
+            return jsonify({
+                'status': 'error',
+                'message': f"Otomasyon sırasında hata oluştu: {flow_error}\nKayıt kontrolü: {verification['message']}",
+                'verification': verification,
+            }), 500
+
+        message = f"{customer['title']} için {format_try(p['amount'])} TL {label} Akınsoft'a işlendi."
+        return jsonify({'status': 'success', 'message': message, 'verification': verification})
+    except Exception as e:
+        append_log(f"[CARI ISLEM HATA] {str(e)}")
+        return jsonify({'status': 'error', 'message': f'Cari işlem hatası: {str(e)}'}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv("PORT", 5000)), threaded=True, debug=False)

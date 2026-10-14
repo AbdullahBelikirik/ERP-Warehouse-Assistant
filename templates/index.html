@@ -97,6 +97,49 @@
         </div>
     </div>
 
+    <!-- CUSTOMER TRANSACTION (COLLECTION / PAYMENT) CONFIRMATION MODAL -->
+    <div id="txConfirmModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col justify-center items-center p-4">
+        <div id="txConfirmBox" class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border-4 border-emerald-600 flex flex-col space-y-4">
+            <div class="text-center">
+                <h3 id="lblTxConfirmTitle" class="font-black text-xl text-gray-900">Tahsilat</h3>
+                <p id="lblTxConfirmCustomer" class="text-sm font-bold text-purple-700 mt-1"></p>
+            </div>
+            <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 space-y-2 text-sm">
+                <div class="flex justify-between items-center text-base font-black">
+                    <span id="lblTxConfirmAmountLabel" class="text-gray-700">Tutar:</span>
+                    <span id="lblTxConfirmAmount" class="text-2xl text-gray-900">0</span>
+                </div>
+                <div class="flex justify-between font-semibold text-gray-600">
+                    <span>Ödeme şekli:</span>
+                    <span id="lblTxConfirmMethod" class="font-bold text-gray-900"></span>
+                </div>
+                <div id="rowTxConfirmDescription" class="flex justify-between font-semibold text-gray-600">
+                    <span>Açıklama:</span>
+                    <span id="lblTxConfirmDescription" class="font-bold text-gray-900 text-right pl-3"></span>
+                </div>
+                <div class="pt-2 border-t border-gray-200 space-y-1">
+                    <div class="flex justify-between font-semibold text-gray-600">
+                        <span>Şu anki bakiye:</span>
+                        <span id="lblTxConfirmBalance" class="font-bold text-gray-900"></span>
+                    </div>
+                    <div class="flex justify-between font-semibold text-gray-600">
+                        <span>İşlem sonrası:</span>
+                        <span id="lblTxConfirmExpected" class="font-black text-emerald-700"></span>
+                    </div>
+                </div>
+            </div>
+            <p class="text-[11px] text-gray-500 font-semibold text-center">Onaylarsan bilgisayarda Akınsoft ekranı otomatik doldurulup KAYDEDİLİR. İşlem bitene kadar bilgisayara dokunulmamalı.</p>
+            <div class="flex space-x-2 pt-1">
+                <button id="btnTxConfirm" class="flex-1 bg-emerald-600 active:bg-emerald-700 text-white font-black py-3.5 rounded-xl transition text-base shadow">
+                    Onayla ve İşle
+                </button>
+                <button id="btnTxCancel" class="bg-gray-200 active:bg-gray-300 text-gray-700 font-bold px-4 py-3.5 rounded-xl transition text-sm">
+                    Vazgeç
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- COMPLETE INVOICE MODAL -->
     <div id="completeInvoiceModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col justify-center items-center p-4">
         <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border-4 border-purple-600 flex flex-col space-y-4">
@@ -176,7 +219,7 @@
         </div>
     </div>
 
-    <!-- PRODUCT SELECTION MODAL (INVOICE) -->
+    <!-- PRODUCT SELECTION MODAL FOR THE INVOICE -->
     <div id="invoiceSelectionModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex-col justify-center items-center p-4">
         <div class="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] p-5 shadow-2xl flex flex-col">
             <div class="flex justify-between items-center pb-3 border-b border-gray-200">
@@ -255,7 +298,7 @@
                 </div>
 
                 <div class="flex space-x-2">
-                    <!-- Persistent quantity box (remembers its value) -->
+                    <!-- ⚡ Persistent quantity box (keeps its value) -->
                     <input type="number" id="invoiceQuantityInput" value="1" min="1" placeholder="Miktar" 
                         onclick="this.select()"
                         class="w-24 p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 text-lg font-black text-center text-purple-900 bg-purple-50/50">
@@ -267,7 +310,7 @@
                 </div>
             </div>
 
-            <!-- INTEGRATED PRICE & PRODUCT INFO (READ-ONLY) -->
+            <!-- INTEGRATED PRICE & PRODUCT INFO (READ ONLY) -->
             <div id="priceInfoPanel" class="mt-4 p-4 rounded-xl border border-blue-200 bg-blue-50/60 hidden transition-all">
                 <div class="flex justify-between items-start">
                     <div class="flex-1 pr-2">
@@ -299,8 +342,8 @@
                     </div>
                 </div>
 
-                <!-- Undo / price edit / print quick actions -->
-                <div class="flex space-x-2 mb-3">
+                <!-- Undo and Change Price quick actions -->
+                <div class="flex space-x-2 mb-2">
                     <button id="btnUndo" title="Son Eklenen Ürünü Faturadan Sil"
                             class="flex-1 bg-gray-100 active:bg-gray-200 text-gray-700 font-bold py-2 rounded-xl text-xs border border-gray-300 transition flex items-center justify-center">
                         Son Ekleneni Geri Al
@@ -309,8 +352,17 @@
                             class="flex-1 bg-purple-700 active:bg-purple-900 text-white font-black py-2 rounded-xl text-xs shadow-sm transition flex items-center justify-center">
                         Fiyat Değiştir
                     </button>
-                    <button id="btnErpPrint" type="button" class="w-16 bg-blue-700 active:bg-blue-900 text-white font-bold py-2 rounded-xl text-xs shadow-sm transition flex items-center justify-center">
-                        YAZDIR                        
+                </div>
+
+                <!-- Send the invoice to Akinsoft: save only / save + print -->
+                <div class="flex space-x-2 mb-3">
+                    <button id="btnErpSave" type="button" title="Faturayı Akınsoft'ta kaydet, yazdırma"
+                            class="flex-1 bg-emerald-600 active:bg-emerald-800 text-white font-black py-2.5 rounded-xl text-sm shadow-sm transition flex items-center justify-center">
+                        KAYDET
+                    </button>
+                    <button id="btnErpPrint" type="button" title="Faturayı Akınsoft'ta kaydet ve yazdır"
+                            class="flex-1 bg-blue-700 active:bg-blue-900 text-white font-black py-2.5 rounded-xl text-sm shadow-sm transition flex items-center justify-center">
+                        YAZDIR
                     </button>
                 </div>
 
@@ -318,7 +370,7 @@
             </div>
         </section>
 
-        <!-- CLICKABLE CUSTOMER BALANCE CARD -->
+        <!-- ⚡ SIMPLIFIED & CLICKABLE CUSTOMER BALANCE CARD -->
         <section id="customerBalancePanel" class="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 hidden cursor-pointer active:scale-[0.99] transition-all hover:border-purple-300" title="Ekstreyi görmek için dokunun">
             <div class="flex justify-between items-center">
                 <div class="flex-1 pr-3">
@@ -333,6 +385,49 @@
             <div class="mt-2.5 pt-2 border-t border-gray-100 flex justify-between items-center text-[11px] text-gray-400 font-medium">
                 <span>Ekstre detaylarını görmek için dokunun</span>
                 <span class="text-purple-600 font-bold">Hareketler &rarr;</span>
+            </div>
+        </section>
+
+        <!-- ⚡ CUSTOMER TRANSACTION PANEL (COLLECTION / PAYMENT) - shown once a customer is selected, right above the add-barcode section -->
+        <section id="customerTxPanel" class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hidden">
+            <h2 class="text-lg font-bold mb-1 text-amber-600 flex items-center">
+                <svg class="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Cari İşlem (Tahsilat / Tediye)
+            </h2>
+            <p id="lblTxCustomer" class="text-xs font-bold text-gray-500 mb-3 truncate"></p>
+
+            <div class="flex flex-col space-y-3">
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btnTxCollection" type="button" data-type="collection"
+                            class="tx-type-btn py-3 rounded-xl border-2 border-gray-300 bg-gray-50 text-gray-700 font-black text-sm transition">
+                        Tahsilat
+                    </button>
+                    <button id="btnTxPayment" type="button" data-type="payment"
+                            class="tx-type-btn py-3 rounded-xl border-2 border-gray-300 bg-gray-50 text-gray-700 font-black text-sm transition">
+                        Tediye
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btnTxCash" type="button" data-method="cash"
+                            class="tx-method-btn py-2.5 rounded-xl border-2 border-gray-300 bg-gray-50 text-gray-700 font-bold text-sm transition">Nakit</button>
+                    <button id="btnTxDocument" type="button" data-method="document"
+                            class="tx-method-btn py-2.5 rounded-xl border-2 border-gray-300 bg-gray-50 text-gray-700 font-bold text-sm transition">Evrak</button>
+                </div>
+
+                <div>
+                    <input type="text" id="txAmountInput" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Tutar (TL, sadece rakam)..."
+                           class="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-xl font-black">
+                    <p id="lblTxAmountPreview" class="text-xs font-bold text-amber-700 mt-1 min-h-[1rem]"></p>
+                </div>
+
+                <input type="text" id="txDescriptionInput" maxlength="200" placeholder="Açıklama..."
+                       class="w-full p-4 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-base">
+
+                <button id="btnCustomerTx" type="button"
+                        class="w-full bg-amber-500 active:bg-amber-700 text-white font-bold py-4 rounded-xl transition shadow-sm text-lg">
+                    İşle
+                </button>
             </div>
         </section>
 
@@ -499,6 +594,9 @@
         const btnStatementCloseBottom = document.getElementById('btnStatementCloseBottom');
 
         let currentCustomerDetail = null;
+        // Code of the customer picked from the customer search list (for an exact match in collections/payments). It becomes invalid if the text changes afterwards.
+        let selectedCustomerCode = "";
+        let selectedCustomerText = "";
 
         const completeInvoiceModal = document.getElementById('completeInvoiceModal');
         const lblModalCustomerName = document.getElementById('lblModalCustomerName');
@@ -546,7 +644,7 @@
 
         invoiceCustomerInput.addEventListener('input', updateModeBadge);
 
-        // Fetch customer balance and statement
+        // ⚡ FETCH CUSTOMER BALANCE AND STATEMENT
         async function fetchCustomerBalance(customerText) {
             if (!customerText) {
                 customerBalancePanel.classList.add('hidden');
@@ -602,7 +700,7 @@
             }
         }
 
-        // Open the statement modal and list transactions
+        // ⚡ OPEN THE STATEMENT MODAL AND LIST TRANSACTIONS
         function openStatementModal() {
             if (!currentCustomerDetail) return;
 
@@ -686,11 +784,11 @@
             } catch(e) {}
         }
 
-        function showSuccess(message) {
+        function showSuccess(message, elapsed = 3000) {
             const el = document.getElementById('successBanner');
             document.getElementById('successMessage').innerText = message;
             el.classList.remove('hidden');
-            setTimeout(() => { el.classList.add('hidden'); }, 3000);
+            setTimeout(() => { el.classList.add('hidden'); }, elapsed);
         }
 
         function showError(message) {
@@ -754,7 +852,7 @@
 
         async function fetchAndShowPriceDetail(blkodu) {
             try {
-                const res = await authFetch(`/api/fiyat-detay/${blkodu}`);
+                const res = await authFetch(`/api/price/detail/${blkodu}`);
                 const data = await res.json();
                 if (data.status === "single_result" && data.records && data.records.length > 0) {
                     const first = data.records[0];
@@ -786,7 +884,7 @@
         }
 
         // =======================================================
-        // CENTRAL BARCODE PROCESSING ENGINE (REMEMBERS QUANTITY)
+        // ⚡ CENTRAL BARCODE PROCESSING ENGINE (REMEMBERS QUANTITY)
         // =======================================================
         let lastProcessTime = 0;
         let lastProcessedBarcode = "";
@@ -803,6 +901,11 @@
             const customerName = invoiceCustomerInput.value.trim();
             // Use whatever quantity is in the box (default 1)
             const currentQuantity = parseInt(invoiceQuantityInput.value) || 1;
+            if (currentQuantity > MAX_ITEM_QUANTITY) {
+                invoiceQuantityInput.value = "1";
+                showError(`Miktar kutusunda çok büyük bir sayı var (${currentQuantity}). Miktar sıfırlandı, barkodu tekrar okutun.`);
+                return;
+            }
 
             try {
                 const res = await authFetch('/api/barcodes/resolve', {
@@ -823,8 +926,8 @@
                     await fetchAndShowPriceDetail(data.blkodu);
 
                     if (customerName) {
-                        // Add to the invoice with the quantity shown in the box
-                        await addItemToInvoice(customerName, safeCode, currentQuantity);
+                        // ⚡ Add to the invoice with the quantity shown in the box
+                        await addItemToInvoice(customerName, safeCode, currentQuantity, null, true);
                     } else {
                         showSuccess(`[${safeCode}] Fiyatı Bilgi Kutusuna Getirildi.`);
                         invoiceBarcodeInput.value = "";
@@ -852,56 +955,95 @@
         }
 
         // =======================================================
-        // SAFE GLOBAL KEY LISTENER
+        // ⚡ KEYBOARD-WEDGE BARCODE SCANNER GUARD
+        // The scanner types its digits into whichever box is focused (quantity, customer name, quantity boxes in the list...).
+        // Here a fast burst of 8+ digits is treated as a barcode and the box is restored to its PREVIOUS value:
+        //   - quantities/boxes are not corrupted, - the barcode always goes through its own flow (find product, add to list).
+        // Nothing changes while a person types by hand (> 120 ms between keys, or fewer than 8 digits).
+        // Also works for scanners that do not send Enter (8+ digits followed by a short silence = barcode).
         // =======================================================
-        let barcodeBuffer = "";
-        let lastKeyTime = 0;
+        const BARCODE_KEY_INTERVAL_MS = 120;   // Maximum time between two keystrokes of the scanner
+        const BARCODE_MIN_DIGITS = 8;
+        const BARCODE_MAX_DIGITS = 14;
+        const MAX_ITEM_QUANTITY = 100000;   // Same limit as the server: a larger quantity is treated as a barcode and rejected
+        let scan = { digits: "", target: null, previousValue: null, lastTime: 0, scanTimer: null };
+        let lastBarcodeKeyTime = 0;
+
+        function resetScan() {
+            clearTimeout(scan.scanTimer);
+            scan = { digits: "", target: null, previousValue: null, lastTime: 0, scanTimer: null };
+        }
+
+        function isBarcodeInput(el) {
+            const id = el ? (el.id || "") : "";
+            return id === 'invoiceBarcodeInput' || id === 'addBarcodeInput' || id === 'addProductNote';
+        }
+
+        // Undo the digits the scanner leaked into the field and hand the barcode to the central engine
+        function finishScanAsBarcode() {
+            const code = scan.digits;
+            const target = scan.target;
+            if (target && scan.previousValue !== null && typeof target.value === 'string' && target.value !== scan.previousValue) {
+                target.value = scan.previousValue;
+                if (target.id === 'txAmountInput') target.dispatchEvent(new Event('input'));
+            }
+            lastBarcodeKeyTime = scan.lastTime;
+            resetScan();
+            if (code.length > BARCODE_MAX_DIGITS) {
+                showError(`Okunan kod çok uzun (${code.length} hane), barkod olarak kabul edilmedi. Tekrar okutun.`);
+                return;
+            }
+            distributeBarcodeToInputs(code);
+        }
 
         window.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
             const activeEl = document.activeElement;
-            const activeTag = activeEl ? activeEl.tagName.toLowerCase() : "";
-            const activeId = activeEl ? (activeEl.id || "") : "";
 
-            const isBarcodeInputFocused = (activeId === 'invoiceBarcodeInput' || activeId === 'addBarcodeInput' || activeId === 'addProductNote');
-            if (isBarcodeInputFocused) {
-                return;
-            }
+            // Input typed into the barcode boxes is already handled by its own flow (previous behavior)
+            if (isBarcodeInput(activeEl)) { resetScan(); return; }
 
             const nowTime = performance.now();
-            if (nowTime - lastKeyTime > 45) {
-                barcodeBuffer = "";
-            }
-            lastKeyTime = nowTime;
 
-            if (activeTag === 'input' || activeTag === 'textarea') {
-                if (e.key.length === 1 && /^\d$/.test(e.key)) {
-                    barcodeBuffer += e.key;
-                    if (barcodeBuffer.length > 2) {
-                        e.preventDefault();
-                    }
-                } else if (e.key === 'Enter') {
-                    const cleanBarcode = barcodeBuffer.trim();
-                    if (cleanBarcode.length >= 8 && cleanBarcode.length <= 14 && /^\d+$/.test(cleanBarcode)) {
-                        e.preventDefault();
-                        if (activeEl) activeEl.blur();
-                        distributeBarcodeToInputs(cleanBarcode);
-                        barcodeBuffer = "";
-                    }
+            if (e.key === 'Enter') {
+                const scanLength = scan.digits.length;
+                if (scanLength >= BARCODE_MIN_DIGITS && (nowTime - scan.lastTime) <= BARCODE_KEY_INTERVAL_MS + 30) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    finishScanAsBarcode();
+                } else if (scanLength === 0 && lastBarcodeKeyTime > 0 && (nowTime - lastBarcodeKeyTime) < 400) {
+                    // We treated the barcode as Enter-less and processed it; do not let its late Enter trigger anything else
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    lastBarcodeKeyTime = 0;
+                } else {
+                    resetScan();
                 }
                 return;
             }
 
-            if (e.key === 'Enter') {
-                const cleanBarcode = barcodeBuffer.trim();
-                if (cleanBarcode.length >= 8 && cleanBarcode.length <= 14 && /^\d+$/.test(cleanBarcode)) {
-                    e.preventDefault();
-                    distributeBarcodeToInputs(cleanBarcode);
-                    barcodeBuffer = "";
+            if (e.key === 'Shift') return;
+
+            if (e.key.length === 1 && /^\d$/.test(e.key) && !e.repeat) {
+                if ((nowTime - scan.lastTime) > BARCODE_KEY_INTERVAL_MS) resetScan();
+                if (scan.digits === "") {
+                    scan.target = activeEl;
+                    scan.previousValue = (activeEl && typeof activeEl.value === 'string') ? activeEl.value : null;
                 }
-            } else if (e.key.length === 1) {
-                barcodeBuffer += e.key;
+                scan.digits += e.key;
+                scan.lastTime = nowTime;
+                // The key is typed into the field normally; if it turns out to be a barcode it is undone. Without Enter, decide after a short silence.
+                clearTimeout(scan.scanTimer);
+                scan.scanTimer = setTimeout(() => {
+                    if (scan.digits.length >= BARCODE_MIN_DIGITS) finishScanAsBarcode();
+                    else resetScan();
+                }, BARCODE_KEY_INTERVAL_MS + 40);
+                return;
             }
-        });
+
+            // Non-digit key or a held-down key: a person is typing, not the scanner
+            resetScan();
+        }, true);
 
         invoiceBarcodeInput.addEventListener('input', async () => {
             const val = invoiceBarcodeInput.value.trim();
@@ -1032,6 +1174,8 @@
                     row.addEventListener('click', () => {
                         closeCustomerModal();
                         invoiceCustomerInput.value = c.title;
+                        selectedCustomerCode = c.customer_code || "";
+                        selectedCustomerText = c.title;
                         updateModeBadge();
                         invoiceBarcodeInput.focus();
                         fetchInvoiceItems();
@@ -1077,7 +1221,7 @@
         });
 
         // =======================================================
-        // LIVE INVOICE LIST & QUICK QUANTITY NAVIGATION
+        // ⚡ LIVE INVOICE LIST & QUICK QUANTITY NAVIGATION
         // =======================================================
         let currentItems = [];
         let currentSummary = { itemCount: 0, quantity: 0, amount: 0, unpriced: 0 };
@@ -1135,7 +1279,7 @@
                         row.className = 'flex justify-between items-center bg-gray-50 p-2.5 rounded-xl border border-gray-200 text-sm transition-all duration-200';
                         if (shouldHighlight) row.classList.add('flash-highlight');
 
-                        // Left side (product info)
+                        // Left side (checkbox + product info)
                         const leftDiv = document.createElement('div');
                         leftDiv.className = 'flex items-center space-x-2.5 flex-1 pr-2 min-w-0';
 
@@ -1165,7 +1309,7 @@
                         textDiv.appendChild(subPara);
                         leftDiv.appendChild(textDiv);
 
-                        // Right side (quantity/price input + delete button)
+                        // Right side (quantity input + delete button)
                         const rightDiv = document.createElement('div');
                         rightDiv.className = 'flex items-center space-x-2 flex-shrink-0';
 
@@ -1231,6 +1375,12 @@
             const newQuantity = parseInt(newQuantityStr) || 1;
 
             const target = currentItems.find(k => k.code === code);
+            if (target && Number(target.quantity) === newQuantity) return;   // unchanged: do not call the server
+            if (newQuantity > MAX_ITEM_QUANTITY) {
+                showError(`Miktar çok yüksek (${newQuantity}). Barkod yanlış kutuya girmiş olabilir; miktar değiştirilmedi.`);
+                fetchInvoiceItems();
+                return;
+            }
             if (target) {
                 target.quantity = newQuantity;
                 updateCartSummary();
@@ -1264,6 +1414,7 @@
 
             const newPrice = parseFloat(newPriceStr) || 0.01;
             const target = currentItems.find(k => k.code === code);
+            if (target && Math.abs(Number(target.price) - newPrice) < 0.0001) return;   // unchanged: do not call the server
             if (target) {
                 target.price = newPrice;
                 updateCartSummary();
@@ -1300,7 +1451,7 @@
                 inputEl.blur();
 
                 const nextIndex = currentIndex + 1;
-                const nextInput = document.getElementById(`input-${nextIndex}`);
+                const nextInput = document.getElementById(`miktar-input-${nextIndex}`);
                 if (nextInput) {
                     nextInput.focus();
                     nextInput.select();
@@ -1415,7 +1566,7 @@
             invoiceCustomerInput.value = "";
             invoiceBarcodeInput.value = "";
             invoiceBarcodeInput.dataset.stock_code = "";
-            // Reset quantity to 1 when switching to a new customer
+            // Reset the quantity to 1 when switching to a new customer
             invoiceQuantityInput.value = "1";
             lastAddedStockCode = null;
             priceInfoPanel.classList.add('hidden');
@@ -1529,9 +1680,10 @@
         });
 
         // =======================================================
-        // WRITE TO INVOICE (KEEPS QUANTITY)
+        // ⚡ WRITE TO INVOICE & SINGLE-BUTTON FLOW (KEEPS QUANTITY)
         // =======================================================
-        async function addItemToInvoice(customerName, codeOrTextToWrite, quantity, selectedPrice = null) {
+        // infoAlreadyShown: when the item was scanned by barcode, the price info box above is already filled.
+        async function addItemToInvoice(customerName, codeOrTextToWrite, quantity, selectedPrice = null, infoAlreadyShown = false) {
             try {
                 const payload = {
                     customer_name: customerName,
@@ -1548,9 +1700,20 @@
 
                 const data = await response.json();
 
+                // Also show the price history of a product added by stock code / name in the info box above
+                // (so the user can see past prices behind the price selection dialog if it opens).
+                if (!infoAlreadyShown && (data.status === "success" || data.status === "price_selection_required")) {
+                    if (data.blkodu) {
+                        fetchAndShowPriceDetail(data.blkodu);
+                    } else {
+                        // Free text with no match in Akinsoft: do not leave the previous product's info on screen
+                        priceInfoPanel.classList.add('hidden');
+                    }
+                }
+
                 if (data.status === "price_selection_required") {
                     openPriceDeviationModal(data.product_name, data.price_deviation, async (approvedPrice) => {
-                        await addItemToInvoice(customerName, data.stock_code, data.quantity, approvedPrice);
+                        await addItemToInvoice(customerName, data.stock_code, data.quantity, approvedPrice, true);
                     });
                     return;
                 }
@@ -1566,8 +1729,8 @@
 
                     invoiceBarcodeInput.value = "";
                     invoiceBarcodeInput.dataset.stock_code = "";
-                    // NOTE: the quantity box is intentionally NOT reset here.
-                    // The value (e.g. 6) is kept, so the next scanned barcode is added with 6 as well.
+                    // ⚡ NOTE: invoiceQuantityInput.value = "1" was removed!
+                    // The value in the quantity box (e.g. 6) is kept, so the next barcode is added with 6 as well.
                     
                     await fetchInvoiceItems(data.stock_code);
                 } else {
@@ -1593,6 +1756,11 @@
             const knownStockCode = invoiceBarcodeInput.dataset.stock_code ? invoiceBarcodeInput.dataset.stock_code.trim() : "";
             const enteredValue = invoiceBarcodeInput.value.trim();
             const quantity = parseInt(invoiceQuantityInput.value) || 1;
+            if (quantity > MAX_ITEM_QUANTITY) {
+                invoiceQuantityInput.value = "1";
+                showError(`Miktar kutusunda çok büyük bir sayı var (${quantity}). Miktar sıfırlandı, tekrar deneyin.`);
+                return;
+            }
 
             if (!knownStockCode && !enteredValue) {
                 showError("Lütfen bir Ürün Adı, Stok Kodu veya Barkod girin!");
@@ -1698,62 +1866,277 @@
         });
 
         const btnErpPrint = document.getElementById('btnErpPrint');
-        if (btnErpPrint) {
-            btnErpPrint.addEventListener('click', async () => {
-                const customer = invoiceCustomerInput.value.trim();
-                if (!customer) {
-                    showError("Lütfen önce bir müşteri seçin veya cari adı yazın!");
+        const btnErpSave = document.getElementById('btnErpSave');
+
+        // Sends the invoice to Akinsoft. With saveOnly=true the print steps are skipped.
+        async function sendInvoiceToErp(saveOnly) {
+            const customer = invoiceCustomerInput.value.trim();
+            if (!customer) {
+                showError("Lütfen önce bir müşteri seçin veya cari adı yazın!");
+                return;
+            }
+
+            // Never send an invoice with unpriced (0.01) items to Akinsoft
+            const unpricedItems = currentItems.filter(k => Number(k.price) <= 0.011);
+            if (unpricedItems.length > 0) {
+                const firstItems = unpricedItems.slice(0, 6).map(k => "• " + (k.name && k.name !== k.code ? k.name + " (" + k.code + ")" : k.code)).join("\n");
+                showError(`Fiyatı belirlenmemiş (0,01 TL) ${unpricedItems.length} kalem var:\n${firstItems}${unpricedItems.length > 6 ? "\n..." : ""}\n\nÖnce "Fiyat Değiştir" ile fiyatlarını girin.`);
+                return;
+            }
+
+            const confirmText = saveOnly
+                ? `"${customer}" faturası Akınsoft'ta KAYDEDİLECEK, YAZDIRILMAYACAK.\nOnaylıyor musunuz?`
+                : `"${customer}" faturası bilgisayarda Akınsoft üzerinden kesilip yazdırılacak.\nOnaylıyor musunuz?`;
+            if (!confirm(confirmText)) return;
+
+            // Lock both buttons while it runs (no double clicks or overlaps)
+            const activeBtn = saveOnly ? btnErpSave : btnErpPrint;
+            const previousLabel = activeBtn.innerText;
+            btnErpPrint.disabled = true;
+            btnErpSave.disabled = true;
+            activeBtn.innerText = "...";
+
+            try {
+                const res = await authFetch('/api/invoices/print', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        customer_name: customer,
+                        customer_code: invoiceCustomerInput.dataset.customer_code || "",
+                        save_only: saveOnly
+                    })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.status === 'success') {
+                    // Customer transaction check: green if verified, red warning if there is a problem
+                    const check = data.verification;
+                    if (!check) {
+                        showSuccess(data.message);
+                    } else if (check.status === 'verified') {
+                        showSuccess(data.message + "\n" + check.message, 8000);
+                    } else {
+                        showError(data.message + "\n\n⚠ FATURA KONTROLÜ:\n" + check.message);
+                    }
+
+                    // Clear the screen and the customer
+                    invoiceCustomerInput.value = "";
+                    delete invoiceCustomerInput.dataset.customer_code;
+                    invoiceBarcodeInput.value = "";
+                    invoiceBarcodeInput.dataset.stock_code = "";
+                    invoiceQuantityInput.value = "1";
+                    lastAddedStockCode = null;
+                    currentItems = [];
+                    priceEditMode = false;
+
+                    priceInfoPanel.classList.add('hidden');
+                    invoiceCartPanel.classList.add('hidden');
+                    customerBalancePanel.classList.add('hidden');
+                    currentCustomerDetail = null;
+                    updateModeBadge();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                } else {
+                    showError((saveOnly ? "Kaydetme Hatası: " : "Yazdırma Hatası: ") + (data.message || "Bilinmeyen hata"));
+                }
+            } catch (err) {
+                showError("Sunucu Hatası: " + err.message);
+            } finally {
+                btnErpPrint.disabled = false;
+                btnErpSave.disabled = false;
+                activeBtn.innerText = previousLabel;
+            }
+        }
+
+        if (btnErpPrint) btnErpPrint.addEventListener('click', () => sendInvoiceToErp(false));
+        if (btnErpSave) btnErpSave.addEventListener('click', () => sendInvoiceToErp(true));
+
+        // =======================================================
+        // ⚡ CUSTOMER TRANSACTION: COLLECTION / PAYMENT (cash or document)
+        // =======================================================
+        const customerTxPanel = document.getElementById('customerTxPanel');
+        const lblTxCustomer = document.getElementById('lblTxCustomer');
+        const txAmountInput = document.getElementById('txAmountInput');
+        const txDescriptionInput = document.getElementById('txDescriptionInput');
+        const lblTxAmountPreview = document.getElementById('lblTxAmountPreview');
+        const btnCustomerTx = document.getElementById('btnCustomerTx');
+        const txConfirmModal = document.getElementById('txConfirmModal');
+        const btnTxConfirm = document.getElementById('btnTxConfirm');
+        const btnTxCancel = document.getElementById('btnTxCancel');
+
+        let txType = null;        // Starts empty on purpose: collection or payment must be chosen deliberately every time
+        let txMethod = 'cash';
+        let txFormCustomer = "";
+        let pendingTx = null;   // The transaction on the confirmation screen (server preview + user input)
+        let txRunning = false;
+
+        function paintTxButtons() {
+            document.querySelectorAll('.tx-type-btn').forEach(b => {
+                const isSelected = b.dataset.type === txType;
+                const colorClass = b.dataset.type === 'collection' ? 'border-emerald-600 bg-emerald-100 text-emerald-900' : 'border-orange-600 bg-orange-100 text-orange-900';
+                b.className = "tx-type-btn py-3 rounded-xl border-2 font-black text-sm transition " + (isSelected ? colorClass : "border-gray-300 bg-gray-50 text-gray-700");
+            });
+            document.querySelectorAll('.tx-method-btn').forEach(b => {
+                const isSelected = b.dataset.method === txMethod;
+                b.className = "tx-method-btn py-2.5 rounded-xl border-2 font-bold text-sm transition " + (isSelected ? "border-purple-600 bg-purple-100 text-purple-900" : "border-gray-300 bg-gray-50 text-gray-700");
+            });
+        }
+
+        function resetTxForm() {
+            txType = null;
+            txMethod = 'cash';
+            txAmountInput.value = "";
+            txDescriptionInput.value = "";
+            lblTxAmountPreview.innerText = "";
+            paintTxButtons();
+        }
+
+        document.querySelectorAll('.tx-type-btn').forEach(b => b.addEventListener('click', () => { txType = b.dataset.type; paintTxButtons(); }));
+        document.querySelectorAll('.tx-method-btn').forEach(b => b.addEventListener('click', () => { txMethod = b.dataset.method; paintTxButtons(); }));
+
+        txAmountInput.addEventListener('input', () => {
+            // Digits only: no dots/commas/letters (Akinsoft adds the thousands separator itself)
+            txAmountInput.value = txAmountInput.value.replace(/[^0-9]/g, '').replace(/^0+(?=\d)/, '');
+            lblTxAmountPreview.innerText = txAmountInput.value ? Number(txAmountInput.value).toLocaleString('tr-TR') + " TL" : "";
+        });
+
+        // This panel is shown when the customer balance card is shown (customer selected) and hidden with it.
+        function syncCustomerTxVisibility() {
+            const isVisible = !customerBalancePanel.classList.contains('hidden');
+            const currentCustomer = invoiceCustomerInput.value.trim();
+            if (isVisible && currentCustomer) {
+                if (txFormCustomer !== currentCustomer) { resetTxForm(); txFormCustomer = currentCustomer; }
+                lblTxCustomer.innerText = currentCustomer;
+                customerTxPanel.classList.remove('hidden');
+            } else {
+                customerTxPanel.classList.add('hidden');
+                if (!currentCustomer) txFormCustomer = "";
+            }
+        }
+        new MutationObserver(syncCustomerTxVisibility).observe(customerBalancePanel, { attributes: true, attributeFilter: ['class'] });
+        paintTxButtons();
+
+        function buildTxRequestBody(extra = {}) {
+            const text = invoiceCustomerInput.value.trim();
+            const codeValid = selectedCustomerCode && selectedCustomerText === text;
+            return Object.assign({
+                type: txType,
+                method: txMethod,
+                amount: txAmountInput.value,
+                description: txDescriptionInput.value.trim(),
+                customer_name: text,
+                customer_code: codeValid ? selectedCustomerCode : ""
+            }, extra);
+        }
+
+        function closeTxConfirmModal() {
+            txConfirmModal.classList.remove('flex');
+            txConfirmModal.classList.add('hidden');
+        }
+
+        btnCustomerTx.addEventListener('click', async () => {
+            if (txRunning) return;
+            if (!invoiceCustomerInput.value.trim()) { showError("Önce cariyi seçin."); return; }
+            if (!txType) { showError("Önce TAHSİLAT mı TEDİYE mi olduğunu seçin."); return; }
+            if (!/^[0-9]+$/.test(txAmountInput.value) || Number(txAmountInput.value) <= 0) { showError("Tutarı rakamla yazın (örn: 10000)."); return; }
+
+            const previousLabel = btnCustomerTx.innerText;
+            btnCustomerTx.disabled = true;
+            btnCustomerTx.innerText = "...";
+            try {
+                const txBody = buildTxRequestBody();
+                const res = await authFetch('/api/customers/transactions/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(txBody)
+                });
+                const data = await res.json();
+                if (!res.ok || data.status !== 'success') {
+                    showError(data.message || "İşlem önizlenemedi.");
+                    return;
+                }
+                pendingTx = { txBody: txBody, preview: data };
+
+                const isCollection = txBody.type === 'collection';
+                document.getElementById('txConfirmBox').className = "bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border-4 flex flex-col space-y-4 " + (isCollection ? "border-emerald-600" : "border-orange-600");
+                document.getElementById('lblTxConfirmTitle').innerText = isCollection ? "TAHSİLAT" : "TEDİYE";
+                document.getElementById('lblTxConfirmCustomer').innerText = data.title + (data.customer_code && data.customer_code !== data.title ? " (" + data.customer_code + ")" : "");
+                document.getElementById('lblTxConfirmAmountLabel').innerText = "Tutar:";
+                document.getElementById('lblTxConfirmAmount').innerText = data.amount_text + " TL";
+                document.getElementById('lblTxConfirmMethod').innerText = txBody.method === 'document' ? "Evrak" : "Nakit";
+                document.getElementById('lblTxConfirmDescription').innerText = txBody.description;
+                document.getElementById('rowTxConfirmDescription').style.display = txBody.description ? '' : 'none';
+                document.getElementById('lblTxConfirmBalance').innerText = data.balance_text;
+                document.getElementById('lblTxConfirmExpected').innerText = data.expected_balance_text;
+                txConfirmModal.classList.remove('hidden');
+                txConfirmModal.classList.add('flex');
+            } catch (err) {
+                showError("Sunucu Hatası: " + err.message);
+            } finally {
+                btnCustomerTx.disabled = false;
+                btnCustomerTx.innerText = previousLabel;
+            }
+        });
+
+        btnTxCancel.addEventListener('click', () => { closeTxConfirmModal(); pendingTx = null; });
+
+        async function submitCustomerTx(confirmDuplicate = false) {
+            const pending = pendingTx;
+            if (!pending) return;
+            const previousLabel = btnTxConfirm.innerText;
+            txRunning = true;
+            btnTxConfirm.disabled = true;
+            btnTxCancel.disabled = true;
+            btnTxConfirm.innerText = "Akınsoft'a işleniyor...";
+
+            try {
+                const res = await authFetch('/api/customers/transactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(Object.assign({}, pending.txBody, { confirm_duplicate: confirmDuplicate }))
+                });
+                const data = await res.json();
+
+                if (res.status === 409 && data.status === 'duplicate') {
+                    // Same customer + same amount was just entered: on purpose?
+                    txRunning = false;
+                    btnTxConfirm.disabled = false;
+                    btnTxCancel.disabled = false;
+                    btnTxConfirm.innerText = previousLabel;
+                    if (confirm(data.message + "\n\nYine de bir kez daha işlensin mi?")) {
+                        await submitCustomerTx(true);
+                    }
                     return;
                 }
 
-                const confirmed = confirm(`"${customer}" faturası bilgisayarda Akınsoft üzerinden kesilip yazdırılacak.\nOnaylıyor musunuz?`);
-                if (!confirmed) return;
+                closeTxConfirmModal();
+                pendingTx = null;
 
-                const previousLabel = btnErpPrint.innerText;
-                btnErpPrint.disabled = true;
-                btnErpPrint.innerText = "...";
-
-                try {
-                    const res = await authFetch('/api/invoices/print', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            customer_name: customer,
-                            customer_code: invoiceCustomerInput.dataset.customer_code || ""
-                        })
-                    });
-                    const data = await res.json();
-
-                    if (res.ok && data.status === 'success') {
-                        showSuccess(data.message);
-
-                        // Clear the screen and the customer
-                        invoiceCustomerInput.value = "";
-                        delete invoiceCustomerInput.dataset.customer_code;
-                        invoiceBarcodeInput.value = "";
-                        invoiceBarcodeInput.dataset.stock_code = "";
-                        invoiceQuantityInput.value = "1";
-                        lastAddedStockCode = null;
-                        currentItems = [];
-                        priceEditMode = false;
-
-                        priceInfoPanel.classList.add('hidden');
-                        invoiceCartPanel.classList.add('hidden');
-                        customerBalancePanel.classList.add('hidden');
-                        currentCustomerDetail = null;
-                        updateModeBadge();
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                if (res.ok && data.status === 'success') {
+                    const check = data.verification;
+                    if (!check) {
+                        showSuccess(data.message, 8000);
+                    } else if (check.status === 'verified') {
+                        showSuccess(check.message, 9000);
                     } else {
-                        showError("Yazdırma Hatası: " + (data.message || "Bilinmeyen hata"));
+                        showError(data.message + "\n\n⚠ KAYIT KONTROLÜ:\n" + check.message);
                     }
-                } catch (err) {
-                    showError("Sunucu Hatası: " + err.message);
-                } finally {
-                    btnErpPrint.disabled = false;
-                    btnErpPrint.innerText = previousLabel;
+                    resetTxForm();
+                    fetchCustomerBalance(invoiceCustomerInput.value.trim());
+                } else {
+                    showError(data.message || "İşlem yapılamadı!");
+                    fetchCustomerBalance(invoiceCustomerInput.value.trim());
                 }
-            });
+            } catch (err) {
+                closeTxConfirmModal();
+                showError("Sunucu Hatası: " + err.message + "\nİşlemin Akınsoft'a yazılıp yazılmadığını cari bakiyesinden kontrol et.");
+            } finally {
+                txRunning = false;
+                btnTxConfirm.disabled = false;
+                btnTxCancel.disabled = false;
+                btnTxConfirm.innerText = previousLabel;
+            }
         }
+        btnTxConfirm.addEventListener('click', () => submitCustomerTx(false));
 
         const btnStatementPrint = document.getElementById('btnStatementPrint');
         if (btnStatementPrint) {

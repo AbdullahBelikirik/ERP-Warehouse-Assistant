@@ -62,6 +62,7 @@ A localized web application built with **Flask**, **Vanilla JavaScript**, and **
   * Flashlight / Torch toggle via MediaTrack constraints.
   * Web Audio API beep + Vibration (Haptic feedback) on successful reads.
   * Also accepts hardware (USB/Bluetooth) scanners through a global key listener.
+  * **Keyboard-wedge scanner guard:** a fast burst of 8+ digits typed into any focused box (quantity, customer name, list rows) is recognized as a barcode, the box is restored to its previous value and the barcode goes through the normal add-to-invoice flow — with or without a trailing Enter.
 - **🔍 Unified Fast Search & Turkish Normalization:**
   * Custom `to_turkish_upper` mapping solving standard Python `.upper()` `i` -> `I` mismatch against Turkish collation (`İ`).
   * Instant search across `STOK` (Stock Names/Codes) and `CARI` (Customer Trade Titles & Full Names).
@@ -75,7 +76,10 @@ A localized web application built with **Flask**, **Vanilla JavaScript**, and **
   * Real-time item tallying and totals, inline quantity edit, one-tap **price edit mode**, undo-last, instant row deletion.
   * The quantity box remembers its value across consecutive scans.
 - **👤 Customer Balance & Statement:** Net balance, debit/credit totals, tax ID and the last 50 transactions, straight from `CARIHR`.
-- **🖨️ One-Tap ERP Import & Print (Windows only):** Automates the Wolvox desktop UI to import the Excel list, apply the VAT step, save and print the invoice, then archives the used file. Can also print a customer transaction report.
+- **🖨️ One-Tap ERP Import & Print (Windows only):** Automates the Wolvox desktop UI to import the Excel list, apply the VAT step, save and print the invoice, then archives the used file. A **save-only** mode skips printing. The import wait scales with the number of items, and the multi-page print counter is dismissed automatically. Can also print a customer transaction report.
+- **✅ Post-Invoice Verification:** Before the automation runs, the latest `CARIHR` record id and the expected list total are stored. Afterwards the new customer transactions are read back (read-only) and compared: the user sees *verified*, *wrong customer*, *amount mismatch* or *invoice not found*, together with the customer's new balance.
+- **💵 Customer Collection / Payment (Cari Tahsilat / Tediye):** Records cash or document collections and payments in Wolvox through UI automation. The customer must match **exactly** (ambiguous names are refused), a confirmation screen shows the current and expected balance, the result is verified against `CARIHR` (including wrong-customer and reversed-direction detection) and repeated submissions of the same amount within 2 minutes require explicit confirmation.
+- **🛡️ Safety Guards:** One ERP automation at a time (a server-side lock returns `409` while another flow is running), quantities above 100,000 are rejected (a barcode typed into the quantity box), and invoices that still contain unpriced (0.01 TL) items are never sent to the ERP.
 - **🏷️ Duplicate Barcode Guard:** Prevents registering barcodes already assigned in primary (`STOK.BARKODU`) or secondary (`STOK_BARKOD.BARKODU`) tables. New barcodes are queued in `eklenecekler.txt` for the ERP operator.
 
 ---
@@ -155,8 +159,10 @@ All endpoints except `/` and `/api/auth/verify-pin` require the `X-Shop-Token` h
 | `POST /api/invoices/items` | List items of a customer's draft invoice |
 | `POST /api/invoices/items/add` | Add an item (handles the 6x price deviation flow) |
 | `POST /api/invoices/items/update` | Change quantity/price or delete an item |
-| `POST /api/invoices/print` | Import the list into Wolvox, print it and archive the file (Windows) |
+| `POST /api/invoices/print` | Import the list into Wolvox, save (and optionally print) it, verify it against `CARIHR` and archive the file (Windows). Body: `customer_name`, `customer_code`, `save_only` |
 | `POST /api/customers/report/print` | Print the customer transaction report (Windows) |
+| `POST /api/customers/transactions/preview` | Validate a collection/payment and return the current and expected balance (does not touch the ERP) |
+| `POST /api/customers/transactions` | Record a collection/payment in Wolvox and verify it (Windows). Body: `type` (`collection`/`payment`), `method` (`cash`/`document`), `amount`, `description`, `customer_name`, `customer_code`, `confirm_duplicate` |
 
 ---
 
@@ -165,7 +171,8 @@ All endpoints except `/` and `/api/auth/verify-pin` require the `X-Shop-Token` h
 - **Read-Only Database Access:** The app executes only `SELECT` queries on the Firebird database, so core ERP transactional records are never written by SQL. For defense in depth, create a dedicated read-only Firebird user and use it as `DB_USER`.
 - **File-Based Bridge:** Finalized invoice lines are compiled into standardized `STOKKODU` / `MIKTARI` / `FIYATI` Excel sheets, allowing ERP operators to review and import batches natively through the standard Wolvox Import Wizard.
 - **Secrets stay out of the code:** PIN, device token secret and DB password come only from `.env` (which is git-ignored). Never commit a real `.env`.
-- **UI automation caveat:** `/api/invoices/print` and `/api/customers/report/print` simulate mouse clicks at fixed screen coordinates (`COORD_*` constants in `app.py`) on the shop PC. They depend on screen resolution, window layout and a single running ERP window; recalibrate the coordinates for another machine and avoid triggering two prints at once.
+- **UI automation caveat:** the ERP endpoints (`/api/invoices/print`, `/api/customers/report/print`, `/api/customers/transactions`) simulate mouse clicks at fixed screen coordinates (`COORD_*` constants in `app.py`) on the shop PC. They depend on screen resolution, window layout and a single running ERP window. Use `koordinat_olc.py` to re-measure the coordinates on another machine; a server-side lock already prevents two flows from running at once.
+- **Verification is read-only:** invoice and collection/payment checks only read `CARI` / `CARIHR`; they never correct anything themselves and always tell the user to check the ERP when something looks wrong.
 - If you expose the app through a public tunnel, keep the PIN private and consider rate limiting.
 
 ---
