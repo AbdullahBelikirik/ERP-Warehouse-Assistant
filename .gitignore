@@ -26,3 +26,6 @@ gunluk_log_*.txt
 *.swo
 .DS_Store
 Thumbs.db
+
+# MGB internal state
+.mobileide/
