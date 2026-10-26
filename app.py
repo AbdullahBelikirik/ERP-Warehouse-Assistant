@@ -38,6 +38,8 @@ AUTH_TOKEN_SECRET = require_env("AUTH_TOKEN_SECRET")
 BASE_DIR = os.getenv("APP_BASE_DIR", os.path.join(os.path.expanduser("~"), "Desktop"))
 INVOICE_OUTPUT_DIR = os.path.join(BASE_DIR, "fatura_listeleri")
 PENDING_BARCODES_FILE = os.path.join(BASE_DIR, "eklenecekler.txt")
+UNBARCODED_ITEMS_FILE = os.path.join(BASE_DIR, "barkodsuz_mallar.txt")
+UNBARCODED_MATCH_WINDOW_SECONDS = 180   # After a "barcode not registered" scan, how long a stock-code entry can be matched to it
 
 if not os.path.exists(INVOICE_OUTPUT_DIR):
     os.makedirs(INVOICE_OUTPUT_DIR)
@@ -86,6 +88,44 @@ def append_log(message):
             f.write(log_line)
     except Exception as e:
         print("Log write error:", str(e))
+
+# --- Unbarcoded item tracking (only takes notes; never writes anything to Akinsoft) ---
+# A scanned barcode that is not in the system is remembered; if the same item is added to an invoice
+# by stock code shortly after, the "barcode -> stock code" pair is written to barkodsuz_mallar.txt and the daily log.
+_pending_unbarcoded = []   # [(barcode, timestamp)]
+_recently_resolved_by_barcode = {}   # stock_code -> timestamp (items resolved by barcode must not be matched)
+
+def remember_unknown_barcode(barcode):
+    now = time.time()
+    _pending_unbarcoded[:] = [b for b in _pending_unbarcoded
+                              if now - b[1] < UNBARCODED_MATCH_WINDOW_SECONDS and b[0] != barcode][-4:]
+    _pending_unbarcoded.append((barcode, now))
+    append_log(f"[BARKODSUZ] Sistemde olmayan barkod okutuldu: {barcode}")
+
+def mark_resolved_by_barcode(stock_code):
+    now = time.time()
+    _recently_resolved_by_barcode[stock_code] = now
+    for k in [k for k, t in _recently_resolved_by_barcode.items() if now - t > 60]:
+        _recently_resolved_by_barcode.pop(k, None)
+
+def match_unbarcoded_item(stock_code, product_name, customer):
+    """Does an item added by stock code match a barcode that just came back as 'not registered'? Never breaks the invoice flow."""
+    try:
+        now = time.time()
+        if now - _recently_resolved_by_barcode.get(stock_code, 0) < 60:
+            return
+        candidates = [b for b in _pending_unbarcoded if now - b[1] < UNBARCODED_MATCH_WINDOW_SECONDS]
+        if not candidates:
+            return
+        barcode = candidates[-1][0]
+        _pending_unbarcoded[:] = [b for b in _pending_unbarcoded if b[0] != barcode]
+        timestamp = datetime.now().strftime("%d.%m.%Y %H:%M")
+        line = f"Barkod: {barcode} | Stok Kodu: {stock_code} | Ürün: {product_name} | Müşteri: {customer} | Tarih: {timestamp}\n"
+        with open(UNBARCODED_ITEMS_FILE, "a", encoding="utf-8") as f:
+            f.write(line)
+        append_log(f"[BARKODSUZ MAL] {barcode} barkodu Akınsoft'ta kayıtlı değil -> stok koduyla girildi: {stock_code} ({product_name})")
+    except Exception as e:
+        append_log(f"[HATA] Barkodsuz mal eşleştirme: {str(e)}")
 
 def auth_required(f):
     @wraps(f)
@@ -675,6 +715,7 @@ def resolve_barcode():
 
         if match and match[1]:
             blkodu = match[0]
+            mark_resolved_by_barcode(str(match[1]).strip())
             _, _, _, deviation = find_price_by_blkodu(conn, blkodu)
             return jsonify({
                 "status": "success",
@@ -684,6 +725,7 @@ def resolve_barcode():
                 "price_deviation": deviation
             })
         else:
+            remember_unknown_barcode(barcode)
             return jsonify({"status": "not_found", "message": f"'{barcode}' barkodu Akınsoft sisteminde kayıtlı değil!"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -847,6 +889,7 @@ def add_invoice_item():
                         price_missing = True
                 else:
                     append_log(f"[HATA] Tanımsız Barkod: {input_value} ({safe_file_name})")
+                    remember_unknown_barcode(input_value)
                     return jsonify({
                         'status': 'error',
                         'message': f"'{input_value}' barkodu Akınsoft sisteminde kayıtlı değil!"
@@ -907,6 +950,10 @@ def add_invoice_item():
 
         write_invoice_excel(xlsx_path, existing_records)
         append_log(f"[FATURA: {safe_file_name}] Kod: {excel_stock_code} ({display_name}) x {quantity} Adet | Fiyat: {calculated_price:.2f} TL")
+
+        # Item without a barcode: if it was entered by stock code right after a "not registered" scan, note the pair
+        if blkodu is not None and not (len(input_value) == 13 and input_value.isdigit()):
+            match_unbarcoded_item(excel_stock_code, display_name, safe_file_name)
 
         return jsonify({
             'status': 'success', 

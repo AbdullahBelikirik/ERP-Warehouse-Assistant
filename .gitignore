@@ -15,6 +15,7 @@ ENV/
 # Output Lists & Logs
 fatura_listeleri/
 eklenecekler.txt
+barkodsuz_mallar.txt
 *.xlsx
 gunluk_log_*.txt
 
