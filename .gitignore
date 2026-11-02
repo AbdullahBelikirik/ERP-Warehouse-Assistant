@@ -29,3 +29,9 @@ Thumbs.db
 
 # MGB internal state
 .mobileide/
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties

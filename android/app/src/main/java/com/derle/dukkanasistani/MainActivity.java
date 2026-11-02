@@ -8,6 +8,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -29,6 +30,7 @@ public class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
         String savedUrl = preferences.getString(URL_KEY, "");
         if (savedUrl.isEmpty()) {
@@ -84,7 +86,9 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return !request.getUrl().getHost().equals(Uri.parse(preferences.getString(URL_KEY, "")).getHost());
+                String host = request.getUrl().getHost();
+                String siteHost = Uri.parse(preferences.getString(URL_KEY, "")).getHost();
+                return host == null || !host.equals(siteHost);
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
